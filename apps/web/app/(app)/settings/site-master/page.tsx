@@ -254,7 +254,7 @@ function SitesTable({ reloadKey }: { reloadKey: number }) {
               {data?.data.map((s) => {
                 const color = officeColor(s.office);
                 return (
-                  <tr key={s.code} className="border-t" style={{ background: color ? `#${color}55` : undefined }}>
+                  <tr key={s.code} className="border-t" style={{ background: color ? `#${color}40` : undefined }}>
                     <td className="py-1.5 font-mono text-xs font-medium">{s.code}</td>
                     <td>{s.siteName ?? "—"}</td>
                     <td>

@@ -41,7 +41,7 @@ interface TopSites {
   items: { site: string; total: number; active: number; region: string | null }[];
 }
 
-const COLORS = { DOWN: "#ef4444", POWER: "#f59e0b", OTHER: "#94a3b8" } as const;
+const COLORS = { DOWN: "#ef4444", POWER: "#f59e0b", OTHER: "#8ea3c7" } as const;
 const STALE_SEC = 5 * 60;
 
 function SyncBar({ s }: { s: Summary["lastRun"] }) {
@@ -243,7 +243,7 @@ export default function DashboardPage() {
           <div className="h-64 sm:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={daily.data?.series ?? []} margin={{ left: -18, right: 4, top: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1f3d73" />
                 <XAxis
                   dataKey="day"
                   tickFormatter={(d: string) => d.slice(5)}
@@ -251,11 +251,18 @@ export default function DashboardPage() {
                   tickLine={false}
                   axisLine={false}
                   minTickGap={16}
+                  tick={{ fill: "#8ea3c7" }}
                 />
-                <YAxis fontSize={11} allowDecimals={false} tickLine={false} axisLine={false} />
+                <YAxis
+                  fontSize={11}
+                  allowDecimals={false}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: "#8ea3c7" }}
+                />
                 <Tooltip
-                  cursor={{ fill: "#f1f5f9" }}
-                  contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+                  cursor={{ fill: "#15336a" }}
+                  contentStyle={{ borderRadius: 8, borderColor: "#1f3d73", background: "#0f2a5a", color: "#f1f5fb", fontSize: 12 }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="DOWN" stackId="a" fill={COLORS.DOWN} isAnimationActive={false} />

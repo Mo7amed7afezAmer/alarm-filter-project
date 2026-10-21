@@ -123,7 +123,7 @@ export function MultiSelect({
                     <span
                       className={cn(
                         "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                        on ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300",
+                        on ? "border-brand bg-brand text-white" : "border-slate-300",
                       )}
                     >
                       {on && <Check className="h-3 w-3" />}

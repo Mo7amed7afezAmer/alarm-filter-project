@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { ROLE_LABEL } from "@/lib/roles";
+import { ROLE_LABEL } from "@alarm/core";
 import { cn } from "@/lib/utils";
 import { useAppConfig } from "./app-config";
 import { NotificationBell } from "./notification-bell";
@@ -28,8 +28,38 @@ const LINKS: { href: string; label: string; icon: LucideIcon; admin?: boolean }[
   { href: "/cleared", label: "Cleared", icon: CircleCheck },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/hourly", label: "Hourly Alarms", icon: FileClock },
+  { href: "/preferences", label: "My preferences", icon: UserCog },
   { href: "/settings", label: "Settings", icon: Settings, admin: true },
 ];
+
+/** md breakpoint: the sidebar is fixed on the left; below it a top bar opens it as a drawer. */
+function useIsDesktop(): boolean | null {
+  const [desktop, setDesktop] = useState<boolean | null>(null);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const update = () => setDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return desktop;
+}
+
+function Logo() {
+  return (
+    <Link href="/alarms" className="flex min-w-0 items-center gap-2.5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-white">
+        <RadioTower className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className="block truncate font-semibold text-white">Alarm Filter</span>
+        <span className="block truncate text-[10px] uppercase tracking-wider text-sky-700">
+          Network alarm monitor
+        </span>
+      </span>
+    </Link>
+  );
+}
 
 /** "DN/Kafr ElDawar" → group "DN" + name "Kafr ElDawar". */
 function OfficePill({ office }: { office: string }) {
@@ -37,89 +67,98 @@ function OfficePill({ office }: { office: string }) {
   const group = i > 0 ? office.slice(0, i) : null;
   const name = i > 0 ? office.slice(i + 1) : office;
   return (
-    <span
-      className="flex min-w-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800"
+    <div
+      className="flex min-w-0 items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800"
       title={`Office: ${office}`}
     >
-      <Building2 className="h-3.5 w-3.5 shrink-0" />
-      {group && <span className="text-sky-600">{group}</span>}
+      <Building2 className="h-4 w-4 shrink-0" />
+      {group && <span className="text-teal-700">{group}</span>}
       <span className="truncate">{name}</span>
-    </span>
+    </div>
+  );
+}
+
+function SidebarContent({ bell }: { bell: boolean }) {
+  const path = usePathname();
+  const { role, email, office } = useAppConfig();
+  const links = LINKS.filter((l) => !l.admin || role === "ADMIN" || role === "SUPER_ADMIN");
+  const isActive = (href: string) => path.startsWith(href);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-2 border-b border-sidebar-border px-4 py-4">
+        <Logo />
+        {bell && <NotificationBell />}
+      </div>
+
+      <div className="px-3 pt-3">
+        <OfficePill
+          office={office ?? (office === null ? "All offices" : "No office assigned")}
+        />
+      </div>
+
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
+        {links.map(({ href, label, icon: Icon }) => (
+          <Link
+            key={href}
+            href={href}
+            className={cn(
+              "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-white",
+              isActive(href) &&
+                "bg-sidebar-primary font-medium text-white before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-full before:bg-sky-500",
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold uppercase text-white">
+          {email.charAt(0) || "?"}
+        </span>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-sm font-medium text-white" title={email}>
+            {email}
+          </div>
+          <span className="mt-1 inline-block rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium capitalize text-sky-800">
+            {ROLE_LABEL[role]}
+          </span>
+        </div>
+        <button
+          className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
+          title="Sign out"
+          aria-label="Sign out"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
 export function Nav() {
   const path = usePathname();
-  const { role, email, office } = useAppConfig();
+  const desktop = useIsDesktop();
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [path]); // close the mobile menu after navigating
-
-  const links = LINKS.filter((l) => !l.admin || role === "ADMIN" || role === "SUPER_ADMIN");
-  const isActive = (href: string) => path.startsWith(href);
+  useEffect(() => setOpen(false), [path]); // close the drawer after navigating
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-4 px-4">
-        <Link
-          href="/alarms"
-          className="flex shrink-0 items-center gap-2 font-semibold text-slate-900"
-        >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
-            <RadioTower className="h-4 w-4" />
-          </span>
-          <span className="hidden sm:inline">Alarm Filter</span>
-        </Link>
-        {office ? (
-          <OfficePill office={office} />
-        ) : (
-          <OfficePill office={office === null ? "All offices" : "No office assigned"} />
-        )}
+    <>
+      {/* Desktop: fixed sidebar. Only one NotificationBell is mounted (it polls and beeps). */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar md:block">
+        <SidebarContent bell={desktop === true} />
+      </aside>
 
-        <nav className="hidden items-center gap-1 md:flex">
-          {links.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                isActive(href) && "bg-slate-100 font-medium text-slate-900",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <NotificationBell />
-          <Link
-            href="/preferences"
-            title="My preferences"
-            aria-label="My preferences"
-            className={cn(
-              "hidden rounded-md p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 md:block",
-              isActive("/preferences") && "bg-slate-100 text-slate-900",
-            )}
-          >
-            <UserCog className="h-5 w-5" />
-          </Link>
-          <div className="hidden items-center gap-3 md:flex">
-            <div className="text-right leading-tight">
-              <div className="max-w-[16rem] truncate text-sm text-slate-700">{email}</div>
-              <div className="text-xs capitalize text-slate-500">{ROLE_LABEL[role]}</div>
-            </div>
-            <button
-              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </div>
-
+      {/* Phone / tablet: top bar + drawer. */}
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-4 md:hidden">
+        <Logo />
+        <div className="flex items-center gap-1">
+          {desktop === false && <NotificationBell />}
           <button
-            className="rounded-md p-2 text-slate-700 hover:bg-slate-100 md:hidden"
+            className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}
@@ -127,49 +166,15 @@ export function Nav() {
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
-      </div>
-
+      </header>
       {open && (
-        <div className="border-t border-slate-200 bg-white md:hidden">
-          <nav className="mx-auto flex max-w-screen-2xl flex-col gap-1 p-2">
-            {links.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-slate-700 hover:bg-slate-100",
-                  isActive(href) && "bg-slate-100 font-medium text-slate-900",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            ))}
-            <Link
-              href="/preferences"
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2.5 text-slate-700 hover:bg-slate-100",
-                isActive("/preferences") && "bg-slate-100 font-medium text-slate-900",
-              )}
-            >
-              <UserCog className="h-4 w-4" />
-              My preferences
-            </Link>
-            <div className="mt-1 flex items-center justify-between border-t border-slate-100 px-3 pt-3 text-sm">
-              <span className="truncate text-slate-500">
-                {email} · {ROLE_LABEL[role]}
-              </span>
-              <button
-                className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-slate-600"
-                onClick={() => signOut({ callbackUrl: "/login" })}
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
-            </div>
-          </nav>
+        <div className="fixed inset-0 z-40 md:hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-sidebar-border bg-sidebar shadow-xl">
+            <SidebarContent bell={false} />
+          </aside>
         </div>
       )}
-    </header>
+    </>
   );
 }

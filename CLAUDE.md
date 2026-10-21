@@ -413,6 +413,11 @@ Mobile: list + read-only table with the same filters.
 - [x] Phase 6 — Next.js API + auth (all §9 routes, zod, NextAuth JWT roles, exceljs;
       7 integration tests on alarms_test; login page at /login)
 - [ ] Phase 7 — UI pages
+      (2026-10-22, user request: dark navy theme + left sidebar instead of the top navbar.
+      The theme lives in `apps/web/tailwind.config.ts`: `slate` is INVERTED (slate-50 = page bg,
+      slate-900 = brightest text), `bg-white` = navy card, tinted colours 50–300 = dark tints and
+      700–900 = light text, `brand` (teal) = primary/selected. Dark only, no light toggle.
+      Sidebar = `components/nav.tsx` (fixed w-64 on md+, drawer + top bar below md).)
 - [ ] Phase 8 — full compose, backups, LAN access, 24h parallel run, RUNBOOK
       (RUNBOOK.md started with the hourly section; `apps/web/Dockerfile` exists but `web` is
       not in docker-compose.yml yet — it must mount token.json + credentials.json read-only)

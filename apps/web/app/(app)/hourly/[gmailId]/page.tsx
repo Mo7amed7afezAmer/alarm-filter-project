@@ -174,7 +174,7 @@ function ResultsView({ gmailId }: { gmailId: string }) {
       />
 
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-brand px-4 py-2 text-sm text-white shadow-lg">
           {toast}
         </div>
       )}
@@ -212,7 +212,7 @@ function ResultsView({ gmailId }: { gmailId: string }) {
 
       {meta && (
         <>
-          <div className="sticky top-14 z-20 -mx-1 space-y-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
+          <div className="sticky top-14 z-20 md:top-0 -mx-1 space-y-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
             <div role="tablist" aria-label="Sheet" className="flex gap-1 overflow-x-auto">
               {[{ value: "", count: rows.length }, ...HOURLY_SHEETS.map((s) => ({
                 value: s,
@@ -227,7 +227,7 @@ function ResultsView({ gmailId }: { gmailId: string }) {
                     onClick={() => setOne("sheet", s.value || null)}
                     className={cn(
                       "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm",
-                      on ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100",
+                      on ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100",
                     )}
                   >
                     {s.value ? s.value.replace("_", " ") : "All sheets"}

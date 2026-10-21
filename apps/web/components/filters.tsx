@@ -112,7 +112,7 @@ export function FilterBar({ children, active = 0 }: { children: ReactNode; activ
           <SlidersHorizontal className="h-4 w-4 text-slate-500" />
           Filters
           {active > 0 && (
-            <span className="rounded-full bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
+            <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
               {active}
             </span>
           )}

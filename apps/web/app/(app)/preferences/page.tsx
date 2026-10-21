@@ -56,7 +56,7 @@ function Toggle({
         onClick={() => onChange(!checked)}
         className={cn(
           "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors",
-          checked ? "bg-slate-900" : "bg-slate-300",
+          checked ? "bg-brand" : "bg-slate-300",
         )}
       >
         <span
@@ -230,7 +230,7 @@ export default function PreferencesPage() {
                     className={cn(
                       "rounded-lg border p-3 text-left transition-colors",
                       on
-                        ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
+                        ? "border-brand bg-brand/10 ring-1 ring-brand"
                         : "border-slate-200 hover:bg-slate-50",
                     )}
                   >
@@ -239,7 +239,7 @@ export default function PreferencesPage() {
                       <span
                         className={cn(
                           "h-4 w-4 rounded border",
-                          on ? "border-slate-900 bg-slate-900" : "border-slate-300",
+                          on ? "border-brand bg-brand" : "border-slate-300",
                         )}
                       />
                     </div>
@@ -347,7 +347,7 @@ export default function PreferencesPage() {
                   >
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-slate-900"
+                      className="h-4 w-4 accent-brand"
                       checked={on}
                       onChange={() =>
                         set({

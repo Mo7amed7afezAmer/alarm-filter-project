@@ -33,7 +33,7 @@ function LoginForm() {
       className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
     >
       <div className="flex items-center gap-3 pb-2">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-white">
           <RadioTower className="h-5 w-5" />
         </span>
         <div>
@@ -65,7 +65,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-slate-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+        className="w-full rounded-lg bg-brand px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>

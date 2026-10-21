@@ -294,7 +294,7 @@ export function HourlyTable({
               <tr
                 key={row.id}
                 data-office={row.original.office || undefined}
-                style={{ height: ROW_HEIGHT, background: color ? `#${color}` : undefined }}
+                style={{ height: ROW_HEIGHT, background: color ? `#${color}40` : undefined }}
                 className="hover:brightness-95"
               >
                 {row.getVisibleCells().map((cell) => (
