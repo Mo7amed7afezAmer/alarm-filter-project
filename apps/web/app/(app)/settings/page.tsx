@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { TypesVisibilityEditor } from "@/components/types-visibility-editor";
 import { usePoll } from "@/components/use-poll";
-import { ROLE_LABEL, ROLES, type Role } from "@/lib/roles";
+import { ROLE_LABEL, ROLES, type Role } from "@alarm/core";
 
 type Category = "DOWN" | "POWER" | "OTHER";
 interface Rule {

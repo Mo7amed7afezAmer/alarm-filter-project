@@ -1,6 +1,6 @@
 name: alarm-filter
 
-# worker / web / backup are added in later phases (CLAUDE.md §4).
+# web / backup are added in later phases (CLAUDE.md §4).
 # Secrets come from .env (gitignored); see .env.example.
 
 services:
@@ -66,6 +66,36 @@ services:
       retries: 3
     networks: [internal]
     # /health on :4000 is internal only (web reads SystemStatus from the db directly).
+
+  api:
+    # REST API (NestJS, apps/api) for the web pages and the mobile app. Internal only: the web
+    # container proxies /api/* to it on :4100.
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alarm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-alarms}
+      # Decrypts the web session cookie; also signs mobile tokens unless API_JWT_SECRET is set.
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      API_JWT_SECRET: ${API_JWT_SECRET:-}
+      ALARM_TZ: ${ALARM_TZ:-Africa/Cairo}
+      ALERT_HOURS: ${ALERT_HOURS:-4}
+      HOURLY_GMAIL_LABEL: ${HOURLY_GMAIL_LABEL:-Hourly Update}
+      HOURLY_MAX_RAR_MB: ${HOURLY_MAX_RAR_MB:-25}
+      HOURLY_MAX_EXTRACT_MB: ${HOURLY_MAX_EXTRACT_MB:-100}
+      HOURLY_CACHE_MIN: ${HOURLY_CACHE_MIN:-30}
+      GOOGLE_TOKEN_PATH: /app/secrets/token.json
+      GOOGLE_CREDENTIALS_PATH: /app/secrets/credentials.json
+    volumes:
+      - ./token.json:/app/secrets/token.json:ro
+      - ./credentials.json:/app/secrets/credentials.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
 
 volumes:
   pgdata:

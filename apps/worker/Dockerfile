@@ -9,6 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY apps/worker/package.json apps/worker/
+COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile --filter @alarm/worker...
 

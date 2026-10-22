@@ -1,11 +1,8 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import type { Role } from "@alarm/core";
 import { prisma } from "./db";
-
-import type { Role } from "./roles";
-
-export { hasRole, ROLE_RANK, type Role } from "./roles";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 12 * 60 * 60 },

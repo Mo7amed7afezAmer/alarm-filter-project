@@ -4,10 +4,10 @@ import type { ReactNode } from "react";
 import { AppConfigProvider } from "@/components/app-config";
 import { HiddenTypesNote } from "@/components/hidden-types-note";
 import { Nav } from "@/components/nav";
+import { hiddenCount, scopeOfficeOf } from "@alarm/core";
+import { getDisplayFilter, getUserDisplayFilter } from "@alarm/db";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { scopeOfficeOf } from "@/lib/roles";
-import { getDisplayFilter, getUserDisplayFilter, hiddenCount } from "@/lib/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     office: scopeOfficeOf(user),
     /** The user's assigned office (super admin: the office they are viewing). */
     homeOffice: user.office,
-    hiddenTypes: hiddenCount(await getDisplayFilter()),
-    myHiddenTypes: hiddenCount(await getUserDisplayFilter(Number(session.user.id))),
+    hiddenTypes: hiddenCount(await getDisplayFilter(prisma)),
+    myHiddenTypes: hiddenCount(await getUserDisplayFilter(prisma, Number(session.user.id))),
   };
   return (
     <AppConfigProvider value={config}>

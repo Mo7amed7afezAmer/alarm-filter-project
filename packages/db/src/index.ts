@@ -12,3 +12,4 @@ export type { Prisma } from "@prisma/client";
 export { PrismaAlarmRepository } from "./repository.js";
 export * from "./gmailAuth.js";
 export * from "./offices.js";
+export * from "./displayFilter.js";

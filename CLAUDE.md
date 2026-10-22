@@ -27,7 +27,8 @@ LAN at `http://<host-ip>:3000`. No cloud services except Gmail API itself. Zero 
 |---|---|
 | Monorepo | pnpm workspaces: `apps/worker`, `apps/web`, `packages/core`, `packages/db` |
 | Worker | Node 20 long-running process, `node-cron` every 1 min, in-process lock + `pg_advisory_xact_lock`; exposes `GET /health` on :4000 |
-| Web + API | Next.js 14 (App Router), API = Route Handlers under `app/api/*`, `next start` on :3000, `HOSTNAME=0.0.0.0` |
+| Web | Next.js 14 (App Router) pages + NextAuth sign-in (`/api/auth/*`), `next start` on :3000, `HOSTNAME=0.0.0.0`; every other `/api/*` is rewritten (proxied) to the API |
+| API | NestJS 11 (`apps/api`, Express, ESM) on :4100 (internal), global prefix `/api`; used by the web pages (session cookie) and the React Native app (Bearer token) |
 | DB | PostgreSQL 16 container, data in named volume `pgdata`; Prisma ORM |
 | Auth | NextAuth (Credentials provider), JWT sessions, roles `viewer` / `operator` / `admin` (office admin) / `super_admin` (2026-10-20) |
 | UI | React + Tailwind + shadcn/ui, TanStack Table, Recharts |
@@ -42,6 +43,7 @@ LAN at `http://<host-ip>:3000`. No cloud services except Gmail API itself. Zero 
 docker-compose.yml
   db       postgres:16-alpine, volume pgdata, healthcheck pg_isready
   migrate  one-shot: prisma migrate deploy + seed (depends_on db healthy)
+  api      build apps/api (Debian + unrar), :4100 internal, mounts token.json + credentials.json:ro
   worker   build apps/worker, restart: unless-stopped, mounts ./token.json:ro
   web      build apps/web, ports 3000:3000, restart: unless-stopped
   backup   alpine + postgres-client, cron 02:00 pg_dump → ./backups
@@ -49,7 +51,7 @@ docker-compose.yml
 - All services on one network; only `web` (3000) is published. `db` is not exposed.
 - Images: multi-stage, `node:20-alpine`, non-root user, `.dockerignore` present.
 - `web` uses Next.js `output: 'standalone'` to keep the image small.
-- Healthchecks on db, web (`/api/health`) and worker (`/health`).
+- Healthchecks on db, api (`/api/health`), web (`/login`) and worker (`/health`).
 - `docker-compose.dev.yml` overrides: bind-mount source, `pnpm dev`, `next dev`.
 
 ## 5. Email Format
@@ -194,7 +196,7 @@ User         id, email @unique, passwordHash, role(VIEWER|ADMIN)
 SystemStatus id=1, lastHistoryId, lastRunAt, lastError?, lastRunMessages, reprocessDays?
 ```
 
-## 9. API (Next.js Route Handlers)
+## 9. API (NestJS, `apps/api` — refactored from Next.js Route Handlers 2026-10-21)
 - `GET /api/alarms/active?category&site&region&minHours&page`
 - `GET /api/alarms/cleared?from&to&category&site&page`
 - `GET /api/stats/summary` → active counts per category, MTTR per category, last run
@@ -349,7 +351,7 @@ Mobile: list + read-only table with the same filters.
   filter, diff, exportXlsx, siteMaster). `@alarm/core` re-exports only the browser-safe part;
   the server part is `@alarm/core/hourly`. exceljs / node-unrar-js are *optional peer* deps
   of core so the worker image does not grow.
-- Server in `apps/web`: `lib/gmail.ts` (list + attachment, worker's OAuth files;
+- Server in `apps/web` (since 2026-10-21 in `apps/api/src/lib`, see "NestJS API"): `lib/gmail.ts` (list + attachment, worker's OAuth files;
   `HOURLY_GMAIL_MOCK_DIR` serves local .rar files), `lib/hourlyCache.ts` (LRU + in-flight
   promise + status, **per Next.js instance**), `lib/hourly.ts`; routes under
   `app/api/hourly-reports/**`, `app/api/site-master/**`, `app/api/hourly-normalizations`
@@ -418,6 +420,7 @@ Mobile: list + read-only table with the same filters.
       slate-900 = brightest text), `bg-white` = navy card, tinted colours 50–300 = dark tints and
       700–900 = light text, `brand` (teal) = primary/selected. Dark only, no light toggle.
       Sidebar = `components/nav.tsx` (fixed w-64 on md+, drawer + top bar below md).)
+- [x] REST API moved to NestJS (2026-10-21, user request, for React Native): see "NestJS API" below.
 - [ ] Phase 8 — full compose, backups, LAN access, 24h parallel run, RUNBOOK
       (RUNBOOK.md started with the hourly section; `apps/web/Dockerfile` exists but `web` is
       not in docker-compose.yml yet — it must mount token.json + credentials.json read-only)
@@ -445,7 +448,7 @@ Notes:
   overwritten. New migrations: edit schema, then
   `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script`
   (needs a shadow DB) or `prisma migrate dev` against the dev-override db on 127.0.0.1:5432.
-- Integration tests (`packages/db/src/repository.test.ts`, `apps/web/app/api/api.integration.test.ts`)
+- Integration tests (`packages/db/src/repository.test.ts`, `apps/api/src/test/*.integration.test.ts`)
   run only when `TEST_DATABASE_URL` is set and must point at the separate **`alarms_test`**
   database (created + migrated in Phase 6), never at `alarms`.
 - Local dev: ALWAYS start compose with both files
@@ -532,14 +535,14 @@ Notes:
     Office admin: /settings shows only Users — list/create/delete/reset viewers + operators of
     their own office (404 for others). Super admin: everything (Gmail, rules, display filter,
     reprocess, Site Master, normalizations, all users/offices). Pure rules in
-    `apps/web/lib/roles.ts` (unit-tested). `requireUser()` and the (app) layout read role + office
+    `packages/core/src/roles.ts` (unit-tested). The API auth guard and the (app) layout read role + office
     from the DB on every request, so changes apply at once and deleted accounts get 401.
   - Hourly reports + Site Master list are office-scoped too (rows whose Site Master office is the
     user's office; unknown codes hidden from office users).
   - Migration converts existing ADMIN accounts to SUPER_ADMIN and gives every account the
     previously selected `officeLabel`; seed creates ADMIN_EMAIL as SUPER_ADMIN. Office admins are
     created by the super admin in /settings → Users (role "office admin" + office).
-  - Integration tests use real accounts from `apps/web/test-users.ts` (requireUser reads the DB).
+  - Integration tests use real accounts from `apps/api/src/test/test-users.ts` (the guard reads the DB).
 - Gmail access uses `@googleapis/gmail` + `google-auth-library` (same API as `googleapis`,
   far smaller — keeps the worker image < 200MB). Scope: gmail.readonly.
 - Gmail account: de.alarms@mobi-egypt.com (Workspace). OAuth app is in Testing mode with this
@@ -547,3 +550,28 @@ Notes:
   publish the app (or set User type = Internal) so the worker doesn't lose access weekly.
 - samples/ is gitignored (real network data). 300 msgs = only ~40 min of mail; a second
   subject format exists ("Huawei Alram Notify New alarm: ...") — handle in Phase 2.
+- **NestJS API (2026-10-21, user request: REST API for a React Native app, no behaviour change):**
+  - `apps/api` serves every former Route Handler at the SAME path, method, status code and JSON
+    shape (errors `{error, details?}` via `ErrorFilter`). Controllers in `src/modules/*`, the old
+    `apps/web/lib` server code moved to `src/lib/*` unchanged; `src/common/http.ts` keeps the zod
+    `parseQuery/parseBody` helpers. Nest's body parser is OFF: bodies are read per route
+    (json / text / multipart via the Fetch API) so error messages stay identical.
+  - Auth = global `AuthGuard` (`@Public()`, `@Roles(role)`, `@CurrentUser()`): Bearer JWT
+    (`POST /api/auth/token` {email,password} → HS256, 30 days, `API_JWT_SECRET` or
+    NEXTAUTH_SECRET) OR the NextAuth session cookie (decrypted like next-auth/jwt v4 with
+    NEXTAUTH_SECRET). Role + office read from the DB on every request (deleted user → 401).
+    New for mobile: `POST /api/auth/token`, `GET /api/me`. CORS open (no cookies with Bearer).
+  - Web: `next.config.mjs` rewrites `/api/:path*` (fallback) and `/api/auth/token` (beforeFiles,
+    else NextAuth's catch-all takes it) to `API_URL` (default http://127.0.0.1:4100; Docker build
+    arg `http://api:4100`) — fixed at `next build`. NextAuth stays in Next. The API derives the
+    page address from X-Forwarded-Host/-Proto (Gmail OAuth redirect URI, callback redirect).
+  - Shared pure code moved to `@alarm/core` (`roles.ts`, `displayFilter.ts`) and DB reads to
+    `@alarm/db` (`getDisplayFilter(prisma)`, `getUserDisplayFilter(prisma, id)`).
+  - No emitDecoratorMetadata reliance (tsx/vitest use esbuild): no constructor DI by type,
+    `@Inject(Reflector)` explicit. Nest 11 chosen over Nest 12 (12 is ESM-only, 2 months old).
+  - Local dev: `apps/api/.env.local` (gitignored; DATABASE_URL + NEXTAUTH_SECRET like the web's)
+    → `corepack pnpm --filter @alarm/api dev` (:4100), then the web dev server as before.
+    `.claude/launch.json`: `api` + `web-via-api` (:3300). The Playwright e2e (`test:e2e`) needs
+    the API: playwright.config.ts starts it (tsx, :4200, alarms_test, fixture mock dir).
+  - Integration tests boot the real Nest app on a random port (`src/test/harness.ts`) and call it
+    over HTTP with Bearer tokens; one test checks the NextAuth cookie path. 33 API tests pass.
