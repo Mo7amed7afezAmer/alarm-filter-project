@@ -2,37 +2,34 @@
 
 // "Table as image" for sharing on WhatsApp: the filtered rows are drawn on a <canvas> (office
 // colors, header, title) and split into pages so each picture stays readable on a phone.
-// By default each category (DOWN / POWER / OTHER) gets its own images — never mixed.
+// Columns, grouping (category / office), rows per image and age colors come from the user's
+// hourly settings (Settings → Hourly reports); the dialog can change them for one export.
 // Share uses the Web Share API with files (phones, HTTPS only — e.g. via the tunnel); on the
 // LAN (plain http) the images are downloaded and attached in WhatsApp Web / Desktop.
 
 import {
-  CATEGORIES,
-  HOURLY_COLUMNS,
+  HOURLY_ROWS_PER_IMAGE,
+  hourlyCellFill,
   hourlyCellText,
-  officeColor,
+  hourlySiteCount,
+  splitHourlyRows,
   type HourlyColumnKey,
   type HourlyFilters,
   type HourlyRow,
+  type HourlySplitMode,
 } from "@alarm/core";
 import { Copy, Download, ImageIcon, Loader2, Share2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { orderedColumns, type CellFill } from "@/components/hourly/hourly-table";
 import { Button } from "@/components/ui/button";
+import { useUiPrefs } from "@/components/ui-prefs";
 import { cn } from "@/lib/utils";
 
-/** Short column set that fits a phone screen. */
-export const COMPACT_COLUMNS: HourlyColumnKey[] = [
-  "alarmTime",
-  "alarmName",
-  "siteName",
-  "code",
-  "office",
-  "nodality",
-  "vip",
-  "battery",
-  "phone",
-  "siteType",
-];
+export const SPLIT_LABEL: Record<HourlySplitMode, string> = {
+  none: "No split",
+  downVsRest: "Down / Power + Other",
+  category: "Down / Power / Other",
+};
 
 const FONT = `"Segoe UI", Roboto, Arial, sans-serif`;
 const SIZE = 13;
@@ -77,8 +74,9 @@ function renderPage(opts: {
   title: string;
   subtitle: string;
   footer: string;
+  fill: CellFill;
 }): Promise<Blob> {
-  const { rows, cols, widths, title, subtitle, footer } = opts;
+  const { rows, cols, widths, title, subtitle, footer, fill } = opts;
   const tableW = widths.reduce((a, b) => a + b, 0);
   const W = Math.max(tableW + 2, 480);
   const titleH = subtitle ? 56 : 36;
@@ -119,12 +117,12 @@ function renderPage(opts: {
   ctx.font = `${SIZE}px ${FONT}`;
   for (const r of rows) {
     y += ROW_H;
-    const color = officeColor(r.office);
-    ctx.fillStyle = color ? `#${color}` : "#ffffff";
-    ctx.fillRect(1, y, tableW, ROW_H);
-    ctx.fillStyle = "#0f172a";
     x = 1;
     cols.forEach((c, i) => {
+      const color = fill(r, c.key);
+      ctx.fillStyle = color ? `#${color}` : "#ffffff";
+      ctx.fillRect(x, y, widths[i]!, ROW_H);
+      ctx.fillStyle = "#0f172a";
       ctx.fillText(fit(ctx, hourlyCellText(r, c.key), widths[i]! - 2 * PAD_X), x + PAD_X, y + ROW_H / 2);
       x += widths[i]!;
     });
@@ -177,29 +175,43 @@ interface Page {
 
 export function TableImageButton({
   rows,
-  visibleColumns,
   title,
   filters,
   fileStem,
+  ageRef,
 }: {
+  /** Filtered + sorted rows (site numbers are added per image group). */
   rows: HourlyRow[];
-  visibleColumns: HourlyColumnKey[];
   title: string;
   filters: HourlyFilters;
   /** File name prefix, e.g. "hourly-2026-10-13_0700". */
   fileStem: string;
+  /** Report time as wall clock "YYYY-MM-DD HH:mm:ss" — alarm age is measured from it. */
+  ageRef: string | null;
 }) {
+  const { prefs } = useUiPrefs();
+  const hp = prefs.hourly;
   const [open, setOpen] = useState(false);
-  const [compact, setCompact] = useState(true);
-  const [perPage, setPerPage] = useState(40);
-  const [byCategory, setByCategory] = useState(true);
+  const [columnSet, setColumnSet] = useState<"image" | "table">("image");
+  const [perPage, setPerPage] = useState(hp.imageRowsPerPage);
+  const [mode, setMode] = useState<HourlySplitMode>(hp.split.mode);
+  const [byOffice, setByOffice] = useState(hp.split.byOffice);
   const [pages, setPages] = useState<Page[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const keys = compact ? COMPACT_COLUMNS : visibleColumns;
-  const cols = useMemo(() => HOURLY_COLUMNS.filter((c) => keys.includes(c.key)), [keys]);
+  // the settings are the starting point every time the dialog opens
+  useEffect(() => {
+    if (!open) return;
+    setPerPage(hp.imageRowsPerPage);
+    setMode(hp.split.mode);
+    setByOffice(hp.split.byOffice);
+  }, [open, hp.imageRowsPerPage, hp.split.mode, hp.split.byOffice]);
+
+  const keys = columnSet === "image" ? hp.imageColumns : hp.tableColumns;
+  const cols = useMemo(() => orderedColumns(keys), [keys]);
   const subtitle = filterSummary(filters);
+  const fill = useCallback<CellFill>((r, k) => hourlyCellFill(r, k, ageRef, hp), [ageRef, hp]);
 
   useEffect(() => {
     if (!open) return;
@@ -208,22 +220,18 @@ export function TableImageButton({
     setBusy(true);
     setMsg(null);
     (async () => {
+      const groups = splitHourlyRows(rows, { mode, byOffice });
       // same column widths for every image so they line up when scrolled through
-      const widths = columnWidths(rows, cols);
+      const widths = columnWidths(groups.flatMap((g) => g.rows), cols);
       const stamp = new Date().toLocaleString("en-GB", { hour12: false });
-      const groups: { label: string | null; rows: HourlyRow[] }[] = byCategory
-        ? CATEGORIES.map((c) => ({ label: c as string | null, rows: rows.filter((r) => r.category === c) })).filter(
-            (g) => g.rows.length,
-          )
-        : [{ label: null, rows }];
-      if (!groups.length) groups.push({ label: null, rows: [] });
       for (const g of groups) {
         const n = Math.max(1, Math.ceil(g.rows.length / perPage));
         const head = g.label ? `${title} · ${g.label}` : title;
+        const sites = hourlySiteCount(g.rows);
         for (let i = 0; i < n && !cancelled; i++) {
           const slice = g.rows.slice(i * perPage, (i + 1) * perPage);
           const range = g.rows.length
-            ? `${g.label ? `${g.label} ` : ""}rows ${i * perPage + 1}–${i * perPage + slice.length} of ${g.rows.length}`
+            ? `${g.label ? `${g.label} ` : ""}rows ${i * perPage + 1}–${i * perPage + slice.length} of ${g.rows.length} · ${sites} site${sites === 1 ? "" : "s"}`
             : "no rows";
           const blob = await renderPage({
             rows: slice,
@@ -232,8 +240,10 @@ export function TableImageButton({
             title: n > 1 ? `${head}  (${i + 1}/${n})` : head,
             subtitle,
             footer: `${range} · Alarm Filter · ${stamp}`,
+            fill,
           });
-          const name = `${fileStem}${g.label ? `-${g.label.toLowerCase()}` : ""}${n > 1 ? `-${i + 1}of${n}` : ""}.png`;
+          const slug = g.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+          const name = `${fileStem}${slug ? `-${slug}` : ""}${n > 1 ? `-${i + 1}of${n}` : ""}.png`;
           const file = new File([blob], name, { type: "image/png" });
           made.push({ file, url: URL.createObjectURL(blob) });
         }
@@ -246,7 +256,7 @@ export function TableImageButton({
       cancelled = true;
       made.forEach((p) => URL.revokeObjectURL(p.url));
     };
-  }, [open, rows, cols, perPage, byCategory, title, subtitle, fileStem]);
+  }, [open, rows, cols, perPage, mode, byOffice, title, subtitle, fileStem, fill]);
 
   const files = pages.map((p) => p.file);
   const canShare =
@@ -303,11 +313,11 @@ export function TableImageButton({
                 <span className="text-xs text-slate-500">Columns</span>
                 <select
                   className="h-9 rounded-md border border-input bg-white px-2"
-                  value={compact ? "compact" : "visible"}
-                  onChange={(e) => setCompact(e.target.value === "compact")}
+                  value={columnSet}
+                  onChange={(e) => setColumnSet(e.target.value as "image" | "table")}
                 >
-                  <option value="compact">Compact (fits a phone)</option>
-                  <option value="visible">Same as the table ({visibleColumns.length})</option>
+                  <option value="image">Image columns ({hp.imageColumns.length})</option>
+                  <option value="table">Same as the table ({hp.tableColumns.length})</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1">
@@ -317,16 +327,30 @@ export function TableImageButton({
                   value={perPage}
                   onChange={(e) => setPerPage(Number(e.target.value))}
                 >
-                  {[25, 40, 60, 100].map((n) => (
+                  {HOURLY_ROWS_PER_IMAGE.map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
                   ))}
                 </select>
               </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Separate images by category</span>
+                <select
+                  className="h-9 rounded-md border border-input bg-white px-2"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as HourlySplitMode)}
+                >
+                  {(Object.keys(SPLIT_LABEL) as HourlySplitMode[]).map((m) => (
+                    <option key={m} value={m}>
+                      {SPLIT_LABEL[m]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex h-9 items-center gap-2">
-                <input type="checkbox" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />
-                Separate images per category (Down / Power / Other)
+                <input type="checkbox" checked={byOffice} onChange={(e) => setByOffice(e.target.checked)} />
+                Separate images per office
               </label>
               <div className="ml-auto flex flex-wrap gap-2">
                 {canShare && (

@@ -120,12 +120,13 @@ export function apiQueryFromParams(p: URLSearchParams): URLSearchParams {
   return out;
 }
 
-export function useHourlyUrl() {
+/** `defaultSort` applies while the URL has no ?sort (the user's "sort by site code" setting). */
+export function useHourlyUrl(defaultSort: HourlySort = HOURLY_DEFAULT_SORT) {
   const params = useSearchParams();
   const router = useRouter();
   const path = usePathname();
   const filters = useMemo(() => filtersFromParams(params), [params]);
-  const sort: HourlySort = useMemo(() => parseHourlySort(params.get("sort")), [params]);
+  const sort: HourlySort = useMemo(() => parseHourlySort(params.get("sort"), defaultSort), [params, defaultSort]);
 
   const replace = useCallback(
     (mutate: (next: URLSearchParams) => void) => {
@@ -154,10 +155,10 @@ export function useHourlyUrl() {
     (s: HourlySort) =>
       replace((n) => {
         const str = formatHourlySort(s);
-        if (!s.length || str === formatHourlySort(HOURLY_DEFAULT_SORT)) n.delete("sort");
+        if (!s.length || str === formatHourlySort(defaultSort)) n.delete("sort");
         else n.set("sort", str);
       }),
-    [replace],
+    [replace, defaultSort],
   );
   const clear = useCallback(
     () => replace((n) => [...MULTI_KEYS, ...SINGLE_KEYS].forEach((k) => k !== "sheet" && n.delete(k))),

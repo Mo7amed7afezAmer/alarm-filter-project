@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_HOURLY_PREFS } from "./hourly/output.js";
 import { DEFAULT_UI_PREFS, normalizeUiPrefs } from "./uiPrefs.js";
 
 describe("normalizeUiPrefs", () => {
@@ -24,6 +25,7 @@ describe("normalizeUiPrefs", () => {
         groupBySite: true,
         hiddenColumns: { active: ["region", "age"], cleared: ["clearType"] },
       },
+      hourly: DEFAULT_HOURLY_PREFS,
     });
   });
 

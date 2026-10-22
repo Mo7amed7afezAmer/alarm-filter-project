@@ -1,6 +1,8 @@
 // Personal UI settings of one user (users.uiPrefs): theme and how the alarm tables look.
 // Pure part — the API validates and stores it, the web pages read it.
 
+import { DEFAULT_HOURLY_PREFS, normalizeHourlyPrefs, type HourlyPrefs } from "./hourly/output.js";
+
 export const THEMES = ["blue", "dark", "light"] as const;
 export type Theme = (typeof THEMES)[number];
 
@@ -48,11 +50,14 @@ export interface UiPrefs {
     /** Column ids hidden per table (required columns are never hidden). */
     hiddenColumns: Record<AlarmTable, string[]>;
   };
+  /** Hourly reports: table, images, Excel and PDF (hourly/output.ts). */
+  hourly: HourlyPrefs;
 }
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
   theme: "blue",
   alarms: { siteInfoIcons: false, groupBySite: false, hiddenColumns: { active: [], cleared: [] } },
+  hourly: DEFAULT_HOURLY_PREFS,
 };
 
 /** Any stored / submitted value → a complete, valid UiPrefs (unknown keys and ids dropped). */
@@ -76,5 +81,6 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
         }),
       ) as Record<AlarmTable, string[]>,
     },
+    hourly: normalizeHourlyPrefs(r.hourly),
   };
 }

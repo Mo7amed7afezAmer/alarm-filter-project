@@ -70,16 +70,26 @@ export const HOURLY_DEFAULT_SORT: HourlySort = [
   { key: "alarmTime", desc: true },
 ];
 
-/** "office,-alarmTime" → sort spec. Unknown keys are dropped; empty → default. */
-export function parseHourlySort(s: string | undefined | null): HourlySort {
-  if (!s) return HOURLY_DEFAULT_SORT;
+/** "Sort rows by site code" setting: office, then site code, then newest alarm first. */
+export const HOURLY_SORT_BY_SITE: HourlySort = [
+  { key: "office", desc: false },
+  { key: "code", desc: false },
+  { key: "alarmTime", desc: true },
+];
+
+/** "office,-alarmTime" → sort spec. Unknown keys are dropped; empty → `fallback`. */
+export function parseHourlySort(
+  s: string | undefined | null,
+  fallback: HourlySort = HOURLY_DEFAULT_SORT,
+): HourlySort {
+  if (!s) return fallback;
   const out: HourlySort = [];
   for (const part of s.split(",")) {
     const desc = part.startsWith("-");
     const key = part.replace(/^[-+]/, "") as HourlyColumnKey;
     if ((HOURLY_COLUMN_KEYS as string[]).includes(key)) out.push({ key, desc });
   }
-  return out.length ? out : HOURLY_DEFAULT_SORT;
+  return out.length ? out : fallback;
 }
 
 export const formatHourlySort = (sort: HourlySort): string =>
@@ -88,6 +98,15 @@ export const formatHourlySort = (sort: HourlySort): string =>
 export function sortHourlyRows(rows: readonly HourlyRow[], sort: HourlySort): HourlyRow[] {
   return [...rows].sort((a, b) => {
     for (const { key, desc } of sort) {
+      if (key === "siteNo" || key === "siteAlarms") {
+        // numbers: compare numerically, rows without a site code last
+        const an = a[key];
+        const bn = b[key];
+        if (an === bn) continue;
+        if (an === undefined) return 1;
+        if (bn === undefined) return -1;
+        return (an < bn ? -1 : 1) * (desc ? -1 : 1);
+      }
       const av = hourlyCellText(a, key);
       const bv = hourlyCellText(b, key);
       if (av === bv) continue;

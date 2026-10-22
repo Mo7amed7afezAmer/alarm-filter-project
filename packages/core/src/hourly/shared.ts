@@ -4,4 +4,5 @@ export * from "./types.js";
 export * from "./normalize.js";
 export * from "./filter.js";
 export * from "./diff.js";
+export * from "./output.js";
 export { enrichRows, siteMap, type SiteInfo, type EnrichResult } from "./enrich.js";

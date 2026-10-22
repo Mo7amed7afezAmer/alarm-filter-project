@@ -7,9 +7,15 @@ import {
   diffHourly,
   filterHourlyRows,
   hourlyFacets,
+  hourlyCellFill,
+  hourlySortFor,
   NORMALIZED_FIELDS,
+  normalizeUiPrefs,
   parseHourlySort,
   sortHourlyRows,
+  splitHourlyRows,
+  visibleHourlyRows,
+  wallClockOf,
 } from "@alarm/core";
 import { buildHourlyXlsx } from "@alarm/core/hourly";
 import { prisma } from "@alarm/db";
@@ -152,8 +158,9 @@ export class HourlyController {
     };
   }
 
-  /** ?<same filters>&sort&columns=a,b,c → .xlsx of the visible table: chosen columns in order,
-   *  office row colors, frozen header, autofilter. */
+  /** ?<same filters>&sort&columns=a,b,c → .xlsx of the visible table: chosen columns in order.
+   *  The user's hourly settings (users.uiPrefs.hourly) apply: hidden alarm types, default sort,
+   *  one sheet per category / office group, age colors over the office colors. */
   @Get("hourly-reports/:gmailId/export")
   async export(
     @Param("gmailId") gmailId: string,
@@ -164,18 +171,27 @@ export class HourlyController {
     const id = checkGmailId(gmailId);
     const sp = searchParams(req);
     const filters = parseFilters(sp);
-    const columns = parseColumns(sp);
-    const sort = parseHourlySort(sp.get("sort"));
+    const [report, info, u] = await Promise.all([
+      getReport(id, user.role),
+      hourlySource()
+        .get(id)
+        .catch(() => null),
+      prisma.user.findUnique({ where: { id: user.id }, select: { uiPrefs: true } }),
+    ]);
+    const prefs = normalizeUiPrefs(u?.uiPrefs).hourly;
+    const columns = sp.getAll("columns").length ? parseColumns(sp) : prefs.tableColumns;
+    const sort = parseHourlySort(sp.get("sort"), hourlySortFor(prefs));
 
-    const report = await getReport(id, user.role);
-    const visible = await scopeRows(report.rows, user.id);
+    const visible = visibleHourlyRows(await scopeRows(report.rows, user.id), prefs);
     const rows = sortHourlyRows(filterHourlyRows(visible, filters), sort);
-    const buf = await buildHourlyXlsx(rows, columns);
+    // age is measured from the time the report mail arrived (wall clock, like Alarm Time)
+    const receivedAt = info?.receivedAt ?? report.meta.processedAt;
+    const ref = wallClockOf(new Date(receivedAt), process.env.ALARM_TZ || "Africa/Cairo");
+    const buf = await buildHourlyXlsx(splitHourlyRows(rows, prefs.split), columns, {
+      fill: (r, key) => hourlyCellFill(r, key, ref, prefs),
+    });
 
-    const info = await hourlySource()
-      .get(id)
-      .catch(() => null);
-    const stamp = (info?.receivedAt ?? new Date().toISOString()).slice(0, 16).replace(/[:T]/g, "-");
+    const stamp = receivedAt.slice(0, 16).replace(/[:T]/g, "-");
     res
       .status(200)
       .set({

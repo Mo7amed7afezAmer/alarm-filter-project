@@ -17,39 +17,25 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, ArrowDown, ArrowUp, Columns3, Inbox, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Columns3, Inbox, RotateCcw, Settings2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PhoneLink } from "@/components/alarm-bits";
+import { useUiPrefs } from "@/components/ui-prefs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = "hourly.columns.v1";
 const ALL_KEYS = HOURLY_COLUMNS.map((c) => c.key) as HourlyColumnKey[];
 
-/** Visible columns, persisted per browser (localStorage — a convenience, may be unavailable). */
+/**
+ * Visible table columns in the user's order (users.uiPrefs.hourly.tableColumns, also edited
+ * in Settings → Hourly reports). A column switched on here is added at the end.
+ */
 export function useColumnPrefs() {
-  const [visible, setVisible] = useState<HourlyColumnKey[]>(HOURLY_DEFAULT_COLUMNS);
-  useEffect(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-      if (Array.isArray(raw)) {
-        const keys = raw.filter((k): k is HourlyColumnKey => ALL_KEYS.includes(k));
-        if (keys.length) setVisible(keys);
-      }
-    } catch {
-      /* private mode / blocked storage → defaults */
-    }
-  }, []);
-  const save = (keys: HourlyColumnKey[]) => {
-    // keep the canonical column order
-    const ordered = ALL_KEYS.filter((k) => keys.includes(k));
-    setVisible(ordered);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(ordered));
-    } catch {
-      /* ignore */
-    }
-  };
+  const { prefs, update } = useUiPrefs();
+  const visible = prefs.hourly.tableColumns;
+  const save = (keys: HourlyColumnKey[]) =>
+    update((p) => ({ ...p, hourly: { ...p.hourly, tableColumns: keys } }));
   return { visible, setVisible: save, reset: () => save(HOURLY_DEFAULT_COLUMNS) };
 }
 
@@ -104,6 +90,12 @@ export function ColumnChooser({
           >
             <RotateCcw className="h-3.5 w-3.5" /> Reset to default
           </button>
+          <Link
+            href="/settings/hourly"
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-sky-700 hover:bg-slate-50"
+          >
+            <Settings2 className="h-3.5 w-3.5" /> Column order and more…
+          </Link>
         </div>
       )}
     </div>
@@ -179,9 +171,12 @@ export function HourlyTable({
   height = "calc(100vh - 20rem)",
   empty = "No rows match the filters",
   loading,
+  fill,
 }: {
   rows: HourlyRow[];
   columns: HourlyColumnKey[];
+  /** Cell background ("RRGGBB") — age colors from the hourly settings; default office color. */
+  fill?: (row: HourlyRow, key: HourlyColumnKey) => string | null;
   sort: HourlySort;
   onSort?: (s: HourlySort) => void;
   height?: string;
@@ -204,7 +199,7 @@ export function HourlyTable({
   const table = useReactTable({
     data: rows,
     columns: defs,
-    state: { columnVisibility: visibility },
+    state: { columnVisibility: visibility, columnOrder: columns },
     getCoreRowModel: getCoreRowModel(),
     getRowId: (r) => String(r.id),
     manualSorting: true,
@@ -290,18 +285,28 @@ export function HourlyTable({
           {items.map((vi) => {
             const row = tableRows[vi.index]!;
             const color = officeColor(row.original.office);
+            const office = color ? `#${color}40` : undefined;
             return (
               <tr
                 key={row.id}
                 data-office={row.original.office || undefined}
-                style={{ height: ROW_HEIGHT, background: color ? `#${color}40` : undefined }}
+                style={{ height: ROW_HEIGHT, background: office }}
                 className="hover:brightness-95"
               >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="whitespace-nowrap border-b border-black/5 px-3 py-1.5">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+                {row.getVisibleCells().map((cell) => {
+                  // only colors that differ from the office color are painted per cell
+                  const c = fill?.(row.original, cell.column.id as HourlyColumnKey);
+                  const own = c && c !== color ? `#${c}` : undefined;
+                  return (
+                    <td
+                      key={cell.id}
+                      style={own ? { background: own, color: "#0f172a" } : undefined}
+                      className="whitespace-nowrap border-b border-black/5 px-3 py-1.5"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}
@@ -316,9 +321,17 @@ export function HourlyTable({
   );
 }
 
+export type CellFill = (row: HourlyRow, key: HourlyColumnKey) => string | null;
+
+/** Column definitions in the given order (unknown keys dropped). */
+export const orderedColumns = (keys: readonly HourlyColumnKey[]) =>
+  keys
+    .map((k) => HOURLY_COLUMNS.find((c) => c.key === k))
+    .filter((c): c is (typeof HOURLY_COLUMNS)[number] => !!c);
+
 /** Rows as TSV + an HTML table with office colors (pastes into Excel / Outlook with colors). */
-export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[]) {
-  const cols = HOURLY_COLUMNS.filter((c) => columns.includes(c.key));
+export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[], fill?: CellFill) {
+  const cols = orderedColumns(columns);
   const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
   const tsv = [cols.map((c) => c.header), ...rows.map((r) => cols.map((c) => clean(hourlyCellText(r, c.key))))]
     .map((line) => line.join("\t"))
@@ -329,9 +342,11 @@ export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[]) {
     `<tr>${cols.map((c) => `<th style="background:#E2E8F0">${esc(c.header)}</th>`).join("")}</tr>` +
     rows
       .map((r) => {
-        const color = officeColor(r.office);
-        const bg = color ? ` style="background:#${color}"` : "";
-        return `<tr${bg}>${cols.map((c) => `<td>${esc(hourlyCellText(r, c.key))}</td>`).join("")}</tr>`;
+        const cells = cols.map((c) => {
+          const color = fill ? fill(r, c.key) : officeColor(r.office);
+          return `<td${color ? ` style="background:#${color}"` : ""}>${esc(hourlyCellText(r, c.key))}</td>`;
+        });
+        return `<tr>${cells.join("")}</tr>`;
       })
       .join("") +
     `</table>`;
@@ -342,8 +357,8 @@ export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[]) {
  * Copies rich (HTML) + plain text. navigator.clipboard needs a secure context (HTTPS or
  * localhost) — on http://<lan-ip> fall back to execCommand on a temporary selection.
  */
-export async function copyRows(rows: HourlyRow[], columns: HourlyColumnKey[]): Promise<void> {
-  const { tsv, html } = tableClipboard(rows, columns);
+export async function copyRows(rows: HourlyRow[], columns: HourlyColumnKey[], fill?: CellFill): Promise<void> {
+  const { tsv, html } = tableClipboard(rows, columns, fill);
   if (window.isSecureContext && navigator.clipboard && "ClipboardItem" in window) {
     await navigator.clipboard.write([
       new ClipboardItem({

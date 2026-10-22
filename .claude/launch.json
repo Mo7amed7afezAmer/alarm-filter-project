@@ -70,6 +70,27 @@
         "NEXTAUTH_URL": "http://localhost:3300",
         "API_URL": "http://127.0.0.1:4100"
       }
+    },
+    {
+      "name": "api-hourly-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@alarm/api", "dev"],
+      "port": 4110,
+      "env": {
+        "API_PORT": "4110",
+        "HOURLY_GMAIL_MOCK_DIR": "../../tests/fixtures"
+      }
+    },
+    {
+      "name": "web-via-api-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@alarm/web", "exec", "next", "dev", "-p", "3310"],
+      "port": 3310,
+      "env": {
+        "NEXT_DIST_DIR": ".next-viaapimock",
+        "NEXTAUTH_URL": "http://localhost:3310",
+        "API_URL": "http://127.0.0.1:4110"
+      }
     }
   ]
 }

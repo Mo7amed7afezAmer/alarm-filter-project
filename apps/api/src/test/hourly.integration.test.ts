@@ -188,6 +188,40 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("export follows the user's hourly settings: hidden types, column order, sheets per group", async () => {
+    as("VIEWER");
+    const me = await call("/api/me/ui-prefs");
+    const prefs = me.body.prefs;
+    const put = (hourly: unknown) =>
+      call("/api/me/ui-prefs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...prefs, hourly }),
+      });
+    try {
+      expect(
+        (
+          await put({
+            ...prefs.hourly,
+            hiddenCategories: ["OTHER"],
+            tableColumns: ["siteNo", "code", "alarmTime"],
+            split: { mode: "downVsRest", byOffice: false },
+          })
+        ).status,
+      ).toBe(200);
+      const r = await call(report("export"));
+      expect(r.status).toBe(200);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await r.res.arrayBuffer());
+      expect(wb.worksheets.map((w) => w.name)).toEqual(["DOWN", "POWER + OTHER"]);
+      const ws = wb.worksheets[0]!;
+      expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual(["Site #", "Site Code", "Alarm Time"]);
+      expect(ws.getRow(2).getCell(1).value).toBe("1");
+    } finally {
+      await put(prefs.hourly);
+    }
+  });
+
   it("diff of a report with itself is rejected; SiteMaster edit refreshes enrichment", async () => {
     as("VIEWER");
     expect((await call(`/api/hourly-reports/diff?a=${gmailId}&b=${gmailId}`)).status).toBe(400);

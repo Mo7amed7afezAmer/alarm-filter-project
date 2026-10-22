@@ -4,6 +4,7 @@ import {
   Bell,
   Building2,
   Eye,
+  FileSpreadsheet,
   Mail,
   Palette,
   RefreshCw,
@@ -46,6 +47,10 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
       { href: "/settings/alarms/display", label: "Display alarms", icon: Eye },
       { href: "/settings/alarms/classification", label: "Classification", icon: Tags, roles: SUPER },
     ],
+  },
+  {
+    title: "Hourly reports",
+    items: [{ href: "/settings/hourly", label: "Table, images & files", icon: FileSpreadsheet }],
   },
   {
     title: "Administration",

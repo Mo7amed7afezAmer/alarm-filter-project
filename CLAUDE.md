@@ -394,6 +394,21 @@ Mobile: list + read-only table with the same filters.
   Hourly rows have a `phone` column too (default visible; in the compact WhatsApp image with
   VIP + battery). Phone is editable in /settings/site-master. 2026-10-14: 116/286 alarm sites
   match (only the Kafr El Dawar file is imported); 102/136 sites have a phone.
+- **Hourly output settings (2026-10-22, user request):** /settings/hourly, per user in
+  `users.uiPrefs.hourly` (`packages/core/src/hourly/output.ts`, no migration — uiPrefs is JSON).
+  Applies to the table, WhatsApp images, Excel (server reads the user's prefs in the export
+  route) and the new client-side **PDF** (`components/hourly/table-pdf.tsx`, jspdf 3.0.3 +
+  jspdf-autotable 5.0.2, loaded on click). Settings: hidden sheets / categories / alarm names
+  (names listed from the newest processed report); table/Excel/PDF columns and image columns,
+  each ordered (the page's column chooser edits the same list; localStorage no longer used);
+  "sort by site code" = default sort office → code → newest (`HOURLY_SORT_BY_SITE`, ?sort still
+  overrides); age colours = rules {hours, color}, the highest reached wins, whole row or chosen
+  columns, over the office colour, age = report mail time (wall clock in ALARM_TZ) − Alarm Time,
+  clockInvalid never coloured, default 3 h → red on; split = none | DOWN vs POWER+OTHER | each
+  category, optionally per office → one image set / Excel worksheet / PDF section per group
+  (default: each category, so Excel now has DOWN/POWER/OTHER sheets). New output-only columns
+  `siteNo` ("Site #": 1, 2, … per distinct site code, last = number of sites) and `siteAlarms`
+  (rows of that code), numbered per group by `numberSites()`; images/PDF/footer show "N sites".
 - Fixture counts (tests/fixtures/NSN Update_Output.rar, 13-OCT-2026 ~07:00): data rows
   2G_Down 529, 3G_Down 434, 4G_Down 438, 5G_Down 2, Environmental 1394, HW 35; 856 unique
   Down rows after dedupe (181 SYNCHRONIZATION rows merged across 2G/3G/4G); 2,285 rows total.

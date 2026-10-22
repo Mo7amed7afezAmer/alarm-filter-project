@@ -35,6 +35,25 @@ const uiPrefsBody = z.object({
     groupBySite: z.boolean(),
     hiddenColumns: z.record(z.array(z.string().max(40)).max(40)),
   }),
+  // Hourly output settings: shapes are checked loosely here, normalizeHourlyPrefs cleans them.
+  hourly: z
+    .object({
+      hiddenSheets: z.array(z.string().max(40)).max(20),
+      hiddenCategories: z.array(z.string().max(10)).max(3),
+      hiddenAlarms: z.array(z.string().max(200)).max(1000),
+      tableColumns: z.array(z.string().max(40)).max(40),
+      imageColumns: z.array(z.string().max(40)).max(40),
+      sortBySite: z.boolean(),
+      ageColors: z.object({
+        enabled: z.boolean(),
+        rules: z.array(z.object({ hours: z.number(), color: z.string().max(10) })).max(10),
+        target: z.string().max(20),
+        columns: z.array(z.string().max(40)).max(40),
+      }),
+      split: z.object({ mode: z.string().max(20), byOffice: z.boolean() }),
+      imageRowsPerPage: z.number(),
+    })
+    .optional(),
 });
 
 @Controller()

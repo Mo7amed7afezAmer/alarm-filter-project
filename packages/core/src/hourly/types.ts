@@ -53,6 +53,11 @@ export interface HourlyRow {
   clockInvalid: boolean;
   /** Code is empty or has no SiteMaster entry. */
   unmatched: boolean;
+  /** Output only (numberSites): running number of the row's site code — the last number is
+   *  how many sites are in the list. Undefined for an empty code. */
+  siteNo?: number;
+  /** Output only (numberSites): rows with the same site code in the list. */
+  siteAlarms?: number;
 }
 
 export interface HourlyMeta {
@@ -88,13 +93,28 @@ export const HOURLY_COLUMNS = [
   { key: "alarmName", header: "Alarm", width: 34 },
   { key: "dn", header: "Distinguished Name", width: 44 },
   { key: "category", header: "Category", width: 10 },
+  { key: "siteNo", header: "Site #", width: 7 },
+  { key: "siteAlarms", header: "Alarms on site", width: 9 },
 ] as const satisfies readonly { key: keyof HourlyRow; header: string; width: number }[];
 export type HourlyColumnKey = (typeof HOURLY_COLUMNS)[number]["key"];
 export const HOURLY_COLUMN_KEYS = HOURLY_COLUMNS.map((c) => c.key) as HourlyColumnKey[];
 /** Shown by default (the user's Excel); the rest are opt-in in the column chooser. */
 export const HOURLY_DEFAULT_COLUMNS: HourlyColumnKey[] = HOURLY_COLUMN_KEYS.filter(
-  (k) => k !== "alarmName" && k !== "dn" && k !== "category",
+  (k) => !["alarmName", "dn", "category", "siteNo", "siteAlarms"].includes(k),
 );
+/** Short column set that fits a phone screen (default of the WhatsApp images). */
+export const HOURLY_COMPACT_COLUMNS: HourlyColumnKey[] = [
+  "alarmTime",
+  "alarmName",
+  "siteName",
+  "code",
+  "office",
+  "nodality",
+  "vip",
+  "battery",
+  "phone",
+  "siteType",
+];
 
 /** Cell text for a column (export, copy-as-table, sorting). */
 export function hourlyCellText(row: HourlyRow, key: HourlyColumnKey): string {

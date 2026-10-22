@@ -4,13 +4,21 @@ import {
   CATEGORIES,
   HOURLY_SHEETS,
   filterHourlyRows,
+  hourlyCellFill,
   hourlyFacets,
+  hourlyHiddenCount,
+  hourlySiteCount,
+  hourlySortFor,
+  numberSites,
   officeColor,
   sortHourlyRows,
+  visibleHourlyRows,
+  wallClockOf,
+  type HourlyColumnKey,
   type HourlyMeta,
   type HourlyRow,
 } from "@alarm/core";
-import { ArrowLeft, ClipboardCopy, Download, FilterX, GitCompare, Loader2, Play } from "lucide-react";
+import { ArrowLeft, ClipboardCopy, Download, EyeOff, FilterX, GitCompare, Loader2, Play } from "lucide-react";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useAppConfig } from "@/components/app-config";
@@ -28,6 +36,8 @@ import {
 import { ColumnChooser, copyRows, HourlyTable, useColumnPrefs } from "@/components/hourly/hourly-table";
 import { MultiSelect } from "@/components/hourly/multi-select";
 import { TableImageButton } from "@/components/hourly/table-image";
+import { TablePdfButton } from "@/components/hourly/table-pdf";
+import { useUiPrefs } from "@/components/ui-prefs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +54,9 @@ type State =
 function ResultsView({ gmailId }: { gmailId: string }) {
   const { timeZone, role } = useAppConfig();
   const canProcess = role !== "VIEWER";
-  const { params, filters, sort, setMany, setOne, setSort, clear, active } = useHourlyUrl();
+  const hp = useUiPrefs().prefs.hourly;
+  const defaultSort = useMemo(() => hourlySortFor(hp), [hp]);
+  const { params, filters, sort, setMany, setOne, setSort, clear, active } = useHourlyUrl(defaultSort);
   const cols = useColumnPrefs();
   const [state, setState] = useState<State>({ kind: "loading" });
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -83,14 +95,32 @@ function ResultsView({ gmailId }: { gmailId: string }) {
   const current = idx >= 0 ? reports[idx] : undefined;
   const previous = idx >= 0 ? reports[idx + 1] : undefined;
 
-  const rows = useMemo(() => (state.kind === "ready" ? state.rows : []), [state]);
+  const allRows = useMemo(() => (state.kind === "ready" ? state.rows : []), [state]);
+  // alarm types hidden in Settings → Hourly reports are left out of the page and every export
+  const rows = useMemo(() => visibleHourlyRows(allRows, hp), [allRows, hp]);
+  const hiddenTypes = hourlyHiddenCount(hp);
   // option lists come from the data (within the selected sheet)
   const facets = useMemo(
     () => hourlyFacets(filters.sheet ? rows.filter((r) => r.sheets.includes(filters.sheet!)) : rows),
     [rows, filters.sheet],
   );
   const sheetCounts = useMemo(() => hourlyFacets(rows).sheet, [rows]);
-  const shown = useMemo(() => sortHourlyRows(filterHourlyRows(rows, filters), sort), [rows, filters, sort]);
+  const shown = useMemo(
+    () => numberSites(sortHourlyRows(filterHourlyRows(rows, filters), sort)),
+    [rows, filters, sort],
+  );
+  const sites = useMemo(() => hourlySiteCount(shown), [shown]);
+
+  // alarm age is measured from the time the report mail arrived, as wall clock like Alarm Time
+  const meta0 = state.kind === "ready" ? state.meta : null;
+  const ageRef = useMemo(() => {
+    const at = current?.receivedAt ?? meta0?.processedAt;
+    return at ? wallClockOf(new Date(at), timeZone) : null;
+  }, [current?.receivedAt, meta0?.processedAt, timeZone]);
+  const fill = useCallback(
+    (r: HourlyRow, k: HourlyColumnKey) => hourlyCellFill(r, k, ageRef, hp),
+    [ageRef, hp],
+  );
 
   const exportHref = useMemo(() => {
     const q = apiQueryFromParams(params);
@@ -103,7 +133,9 @@ function ResultsView({ gmailId }: { gmailId: string }) {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const meta = state.kind === "ready" ? state.meta : null;
+  const meta = meta0;
+  const reportTitle = `Nokia hourly report${current ? ` · ${formatDateTime(current.receivedAt, timeZone)}` : ""}`;
+  const fileStem = `hourly-${(current?.receivedAt ?? meta?.processedAt ?? "").slice(0, 16).replace(/[-:]/g, "").replace("T", "_")}`;
 
   return (
     <>
@@ -136,7 +168,7 @@ function ResultsView({ gmailId }: { gmailId: string }) {
                 variant="outline"
                 className="bg-white"
                 onClick={() =>
-                  copyRows(shown, cols.visible).then(
+                  copyRows(shown, cols.visible, fill).then(
                     () => flash(`Copied ${shown.length.toLocaleString("en-US")} rows`),
                     (e) => flash(`Copy failed: ${(e as Error).message}`),
                   )
@@ -145,13 +177,8 @@ function ResultsView({ gmailId }: { gmailId: string }) {
                 <ClipboardCopy className="h-4 w-4" />
                 Copy as table
               </Button>
-              <TableImageButton
-                rows={shown}
-                visibleColumns={cols.visible}
-                filters={filters}
-                title={`Nokia hourly report${current ? ` · ${formatDateTime(current.receivedAt, timeZone)}` : ""}`}
-                fileStem={`hourly-${(current?.receivedAt ?? meta.processedAt).slice(0, 16).replace(/[-:]/g, "").replace("T", "_")}`}
-              />
+              <TableImageButton rows={shown} filters={filters} title={reportTitle} fileStem={fileStem} ageRef={ageRef} />
+              <TablePdfButton rows={shown} filters={filters} title={reportTitle} fileStem={fileStem} ageRef={ageRef} />
               {previous && (
                 <Button size="sm" variant="outline" className="bg-white" asChild>
                   <Link
@@ -330,12 +357,26 @@ function ResultsView({ gmailId }: { gmailId: string }) {
             </div>
           </div>
 
-          <HourlyTable rows={shown} columns={cols.visible} sort={sort} onSort={setSort} />
+          {hiddenTypes > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <EyeOff className="h-4 w-4 shrink-0" />
+              <span>
+                {allRows.length - rows.length} rows of {hiddenTypes} hidden alarm type{hiddenTypes === 1 ? "" : "s"} are
+                left out of the table and every export —{" "}
+                <Link href="/settings/hourly" className="font-medium underline-offset-2 hover:underline">
+                  hourly settings
+                </Link>
+              </span>
+            </div>
+          )}
+
+          <HourlyTable rows={shown} columns={cols.visible} sort={sort} onSort={setSort} fill={fill} />
 
           <div className="flex flex-col gap-1 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
             <span data-testid="row-count">
               Showing <b className="text-slate-800">{shown.length.toLocaleString("en-US")}</b> of{" "}
-              {rows.length.toLocaleString("en-US")} rows
+              {rows.length.toLocaleString("en-US")} rows · <b className="text-slate-800">{sites}</b> site
+              {sites === 1 ? "" : "s"}
               {meta.emptyCodes > 0 && <> · {meta.emptyCodes} rows without a site code</>}
             </span>
             {meta.unmatchedCodes > 0 && (
