@@ -14,3 +14,4 @@ export { MemoryAlarmRepository } from "./memory-repo.js";
 export * from "./hourly/shared.js";
 export * from "./roles.js";
 export * from "./displayFilter.js";
+export * from "./uiPrefs.js";

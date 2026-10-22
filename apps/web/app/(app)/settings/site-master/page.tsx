@@ -1,14 +1,13 @@
 "use client";
 
 import { officeColor } from "@alarm/core";
-import { ArrowLeft, Check, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import Link from "next/link";
+import { Check, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useAppConfig } from "@/components/app-config";
 import { Pager } from "@/components/data-table";
 import { Field, TextFilter, useUrlFilters } from "@/components/filters";
 import { api } from "@/components/hourly/client";
-import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/settings/section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -363,13 +362,9 @@ function SiteMasterView() {
     return <p className="text-sm text-slate-600">Site Master is managed by the super admin.</p>;
   return (
     <>
-      <PageHeader
+      <SectionHeader
         title="Site Master"
-        subtitle={
-          <Link href="/settings" className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900">
-            <ArrowLeft className="h-3.5 w-3.5" /> Settings
-          </Link>
-        }
+        subtitle="Site details (office, VIP, nodality, battery, phone) joined to alarms and hourly reports."
       />
       <ImportCard onDone={() => setReloadKey((k) => k + 1)} />
       <SitesTable reloadKey={reloadKey} />

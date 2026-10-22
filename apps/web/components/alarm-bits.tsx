@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { BatteryMedium, Clock, MapPin, Network, Phone, RadioTower } from "lucide-react";
+import { BatteryMedium, Clock, Crown, MapPin, Network, Phone, RadioTower } from "lucide-react";
 import type { ReactNode } from "react";
 import { CATEGORY_STRIPE, splitAlarmName } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -55,20 +55,68 @@ export function PhoneLink({ value, className }: { value: string | null; classNam
   );
 }
 
-/** Site name + VIP badge. */
-export function SiteCell({ site, vip }: { site: string; vip: boolean | null }) {
+/** VIP / Nodality / Battery as small icons (value on hover) — the "icons" display setting. */
+export function SiteInfoIcons({ info }: { info: SiteMasterInfo }) {
+  const chip = "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded";
+  return (
+    <span className="inline-flex items-center gap-1">
+      {info.vip && (
+        <span className={cn(chip, "bg-rose-600 text-white")} title="VIP site" aria-label="VIP site">
+          <Crown className="h-3 w-3" />
+        </span>
+      )}
+      {info.nodality && (
+        <span
+          className={cn(chip, "bg-violet-100 text-violet-700")}
+          title={`Nodality: ${info.nodality}`}
+          aria-label={`Nodality: ${info.nodality}`}
+        >
+          <Network className="h-3 w-3" />
+        </span>
+      )}
+      {info.battery && (
+        <span
+          className={cn(chip, "bg-emerald-100 text-emerald-700")}
+          title={`Battery: ${info.battery}`}
+          aria-label={`Battery: ${info.battery}`}
+        >
+          <BatteryMedium className="h-3 w-3" />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Site name + VIP badge, or + VIP / Nodality / Battery icons when `icons` is on. */
+export function SiteCell({
+  site,
+  vip,
+  info,
+  icons,
+}: {
+  site: string;
+  vip: boolean | null;
+  info?: SiteMasterInfo;
+  icons?: boolean;
+}) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Mono>{site}</Mono>
-      {vip && <VipBadge />}
+      {icons && info ? <SiteInfoIcons info={info} /> : vip && <VipBadge />}
     </span>
   );
 }
 
 const dash = <span className="text-slate-400">—</span>;
 
-/** Nodality / Battery / Phone columns from Site Master. */
-export function siteMasterColumns<T extends SiteMasterInfo>(): ColumnDef<T, unknown>[] {
+/** Nodality / Battery / Phone columns from Site Master (only Phone when shown as icons). */
+export function siteMasterColumns<T extends SiteMasterInfo>(icons = false): ColumnDef<T, unknown>[] {
+  const phone: ColumnDef<T, unknown> = {
+    accessorKey: "phone",
+    header: "Phone",
+    cell: (c) => <PhoneLink value={c.getValue() as string | null} />,
+  };
+  if (icons) return [phone];
   return [
     {
       accessorKey: "nodality",
@@ -80,11 +128,7 @@ export function siteMasterColumns<T extends SiteMasterInfo>(): ColumnDef<T, unkn
       header: "Battery",
       cell: (c) => (c.getValue() as string | null) ?? dash,
     },
-    {
-      accessorKey: "phone",
-      header: "Phone",
-      cell: (c) => <PhoneLink value={c.getValue() as string | null} />,
-    },
+    phone,
   ];
 }
 
@@ -98,6 +142,7 @@ export function AlarmCard({
   right,
   alert,
   info,
+  icons,
 }: {
   alarmName: string;
   category: string;
@@ -107,6 +152,8 @@ export function AlarmCard({
   right?: ReactNode;
   alert?: boolean;
   info?: SiteMasterInfo;
+  /** VIP / Nodality / Battery as icons next to the site. */
+  icons?: boolean;
 }) {
   return (
     <div
@@ -124,17 +171,17 @@ export function AlarmCard({
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           <Mono className="break-all">{site}</Mono>
-          {info?.vip && <VipBadge />}
+          {icons && info ? <SiteInfoIcons info={info} /> : info?.vip && <VipBadge />}
         </div>
-        {info && (info.nodality || info.battery || info.phone) && (
+        {info && ((!icons && (info.nodality || info.battery)) || info.phone) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {info.nodality && (
+            {!icons && info.nodality && (
               <span className="flex items-center gap-1">
                 <Network className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                 {info.nodality}
               </span>
             )}
-            {info.battery && (
+            {!icons && info.battery && (
               <span className="flex items-center gap-1">
                 <BatteryMedium className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                 {info.battery}

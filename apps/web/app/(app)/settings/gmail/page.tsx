@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   ExternalLink,
   KeyRound,
@@ -14,12 +13,11 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAppConfig } from "@/components/app-config";
 import { api } from "@/components/hourly/client";
-import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/settings/section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -169,16 +167,9 @@ function GmailView() {
 
   return (
     <>
-      <PageHeader
+      <SectionHeader
         title="Gmail connection"
         subtitle="The alarm mailbox the worker and the hourly reports read (read-only access)"
-        actions={
-          <Button size="sm" variant="outline" className="bg-white" asChild>
-            <Link href="/settings">
-              <ArrowLeft className="h-4 w-4" /> Settings
-            </Link>
-          </Button>
-        }
       />
 
       {msg && (

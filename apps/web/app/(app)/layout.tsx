@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { AppConfigProvider } from "@/components/app-config";
 import { HiddenTypesNote } from "@/components/hidden-types-note";
 import { Nav } from "@/components/nav";
-import { hiddenCount, scopeOfficeOf } from "@alarm/core";
+import { UiPrefsProvider } from "@/components/ui-prefs";
+import { hiddenCount, normalizeUiPrefs, scopeOfficeOf } from "@alarm/core";
 import { getDisplayFilter, getUserDisplayFilter } from "@alarm/db";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -17,7 +18,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Role + office from the database: a change by an admin applies on the next page load.
   const user = await prisma.user.findUnique({
     where: { id: Number(session.user.id) || -1 },
-    select: { role: true, office: true },
+    select: { role: true, office: true, uiPrefs: true },
   });
   if (!user) redirect("/login");
   const config = {
@@ -33,11 +34,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   };
   return (
     <AppConfigProvider value={config}>
-      <Nav />
-      <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5 sm:px-6 sm:py-6 md:ml-64 md:mr-0 md:max-w-none lg:px-8">
-        <HiddenTypesNote />
-        {children}
-      </main>
+      <UiPrefsProvider initial={normalizeUiPrefs(user.uiPrefs)}>
+        <Nav />
+        <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5 sm:px-6 sm:py-6 md:ml-64 md:mr-0 md:max-w-none lg:px-8">
+          <HiddenTypesNote />
+          {children}
+        </main>
+      </UiPrefsProvider>
     </AppConfigProvider>
   );
 }

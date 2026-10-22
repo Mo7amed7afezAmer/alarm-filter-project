@@ -6,53 +6,14 @@ body {
   font-feature-settings: "tnum" 0;
 }
 
-/* Native date / time picker icons are black by default. */
-::-webkit-calendar-picker-indicator {
+/* Native date / time picker icons are black by default. Theme colours: tailwind.config.ts. */
+:root:not([data-theme="light"]) ::-webkit-calendar-picker-indicator {
   filter: invert(0.8);
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
-  }
-}
-@layer base {
-  /* Dark navy theme only (see tailwind.config.ts for the remapped utility palette). */
-  :root {
-    color-scheme: dark;
-    --background: #0a1f44;
-    --foreground: #f1f5fb;
-    --card: #0f2a5a;
-    --card-foreground: #f1f5fb;
-    --popover: #0f2a5a;
-    --popover-foreground: #f1f5fb;
-    --primary: #14b8a6;
-    --primary-foreground: #ffffff;
-    --secondary: #15336a;
-    --secondary-foreground: #f1f5fb;
-    --muted: #15336a;
-    --muted-foreground: #8ea3c7;
-    --accent: #15336a;
-    --accent-foreground: #f1f5fb;
-    --destructive: #ef4444;
-    --destructive-foreground: #ffffff;
-    --border: #1f3d73;
-    --input: #2c4c85;
-    --ring: #2dd4bf;
-    --chart-1: #ef4444;
-    --chart-2: #f59e0b;
-    --chart-3: #8ea3c7;
-    --chart-4: #14b8a6;
-    --chart-5: #38bdf8;
-    --radius: 0.5rem;
-    --sidebar: #081936;
-    --sidebar-foreground: #c4d1e8;
-    --sidebar-primary: #17407f;
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #15336a;
-    --sidebar-accent-foreground: #ffffff;
-    --sidebar-border: #1a3466;
-    --sidebar-ring: #2dd4bf;
   }
 }
 @layer base {

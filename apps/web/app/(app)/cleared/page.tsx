@@ -17,6 +17,7 @@ import { CategoryBadge, ClearTypeBadge } from "@/components/badges";
 import { DataTable, Pager } from "@/components/data-table";
 import { CategoryFilter, Field, FilterBar, TextFilter, useUrlFilters } from "@/components/filters";
 import { PageHeader } from "@/components/page-header";
+import { useUiPrefs } from "@/components/ui-prefs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePoll } from "@/components/use-poll";
@@ -59,6 +60,8 @@ function Duration({ min }: { min: number | null }) {
 function ClearedView() {
   const { timeZone } = useAppConfig();
   const { params, set } = useUrlFilters();
+  const { alarms: display } = useUiPrefs().prefs;
+  const icons = display.siteInfoIcons;
   const today = dateInputValue(new Date(), timeZone);
   const yesterday = dateInputValue(new Date(Date.now() - 86_400_000), timeZone);
   const from = params.get("from") ?? yesterday;
@@ -98,7 +101,14 @@ function ClearedView() {
       {
         accessorKey: "site",
         header: "Site",
-        cell: (c) => <SiteCell site={c.getValue() as string} vip={c.row.original.vip} />,
+        cell: (c) => (
+          <SiteCell
+            site={c.getValue() as string}
+            vip={c.row.original.vip}
+            info={c.row.original}
+            icons={icons}
+          />
+        ),
       },
       {
         id: "cell",
@@ -106,7 +116,7 @@ function ClearedView() {
         accessorFn: (r) => r.cellName ?? r.device ?? "",
         cell: (c) => <Mono className="text-slate-500">{(c.getValue() as string) || "—"}</Mono>,
       },
-      ...siteMasterColumns<ClearedAlarm>(),
+      ...siteMasterColumns<ClearedAlarm>(icons),
       {
         accessorKey: "alarmTime",
         header: "Raised",
@@ -132,7 +142,7 @@ function ClearedView() {
         cell: (c) => <ClearTypeBadge value={c.getValue() as string | null} />,
       },
     ],
-    [timeZone],
+    [timeZone, icons],
   );
 
   const exportQuery = new URLSearchParams(filter);
@@ -198,6 +208,9 @@ function ClearedView() {
         getRowId={(r) => String(r.id)}
         loading={loading && !data}
         empty="No cleared alarms in this range"
+        hiddenColumns={display.hiddenColumns.cleared}
+        groupBy={display.groupBySite ? (r) => r.siteCode ?? r.site : undefined}
+        groupNoun="alarms"
         rowClassName={(r) => CATEGORY_STRIPE[r.category]}
         renderCard={(r) => (
           <AlarmCard
@@ -206,6 +219,7 @@ function ClearedView() {
             site={r.site}
             cell={r.cellName ?? r.device}
             info={r}
+            icons={icons}
             meta={
               <span>
                 {formatDateTime(r.alarmTime, timeZone)} → {formatDateTime(r.clearTime, timeZone)}

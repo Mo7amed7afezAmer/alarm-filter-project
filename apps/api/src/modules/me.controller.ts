@@ -2,7 +2,7 @@
 import { Controller, Get, HttpCode, Post, Put, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { z } from "zod";
-import { normalizePrefs, scopeOfficeOf } from "@alarm/core";
+import { normalizePrefs, normalizeUiPrefs, scopeOfficeOf } from "@alarm/core";
 import { prisma, type Prisma } from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { category, parseBody } from "../common/http.js";
@@ -26,6 +26,15 @@ const prefsBody = z.object({
   categories: z.array(category).max(3),
   alarmNames: z.array(z.string().trim().min(1).max(200)).max(500),
   sites: z.array(z.string().trim().min(1).max(200)).max(100),
+});
+
+const uiPrefsBody = z.object({
+  theme: z.string().max(20),
+  alarms: z.object({
+    siteInfoIcons: z.boolean(),
+    groupBySite: z.boolean(),
+    hiddenColumns: z.record(z.array(z.string().max(40)).max(40)),
+  }),
 });
 
 @Controller()
@@ -60,6 +69,24 @@ export class MeController {
       data: { displayPrefs: filter as unknown as Prisma.InputJsonValue },
     });
     return filter;
+  }
+
+  /** Personal UI settings (theme, alarm table columns / grouping). Defaults when never saved. */
+  @Get("me/ui-prefs")
+  async uiPrefs(@CurrentUser() user: AuthUser) {
+    const u = await prisma.user.findUnique({ where: { id: user.id }, select: { uiPrefs: true } });
+    return { prefs: normalizeUiPrefs(u?.uiPrefs) };
+  }
+
+  /** Replace the user's UI settings (any role); unknown values fall back to the defaults. */
+  @Put("me/ui-prefs")
+  async putUiPrefs(@Req() req: Request, @CurrentUser() user: AuthUser) {
+    const prefs = normalizeUiPrefs(await parseBody(req, uiPrefsBody));
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { uiPrefs: prefs as unknown as Prisma.InputJsonValue },
+    });
+    return { prefs };
   }
 
   /** Every user (viewer or admin) manages their own preferences. */

@@ -23,7 +23,7 @@ export function HiddenTypesNote() {
           {role === "SUPER_ADMIN" && (
             <>
               {" · "}
-              <Link href="/settings#display" className="font-medium underline">
+              <Link href="/settings/alarms/display" className="font-medium underline">
                 Settings
               </Link>
             </>
@@ -33,8 +33,8 @@ export function HiddenTypesNote() {
       {myHiddenTypes > 0 && (
         <span>
           {plural(myHiddenTypes)} hidden by you ·{" "}
-          <Link href="/preferences#display" className="font-medium underline">
-            My preferences
+          <Link href="/settings/alarms/display" className="font-medium underline">
+            Change
           </Link>
         </span>
       )}

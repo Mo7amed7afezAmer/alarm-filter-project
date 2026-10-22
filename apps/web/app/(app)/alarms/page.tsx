@@ -16,6 +16,7 @@ import { CategoryBadge } from "@/components/badges";
 import { DataTable, Pager } from "@/components/data-table";
 import { CategoryFilter, Field, FilterBar, TextFilter, useUrlFilters } from "@/components/filters";
 import { PageHeader } from "@/components/page-header";
+import { useUiPrefs } from "@/components/ui-prefs";
 import { Button } from "@/components/ui/button";
 import { usePoll, useNow } from "@/components/use-poll";
 import { ageMinutes, CATEGORY_STRIPE, formatDateTime, formatMinutes } from "@/lib/format";
@@ -56,6 +57,8 @@ function AlarmsView() {
   const { timeZone, alertHours } = useAppConfig();
   const { params, set } = useUrlFilters();
   const now = useNow(30_000); // live age column
+  const { alarms: display } = useUiPrefs().prefs;
+  const icons = display.siteInfoIcons;
   const category = params.get("category") ?? "";
   const site = params.get("site") ?? "";
   const region = params.get("region") ?? "";
@@ -94,7 +97,14 @@ function AlarmsView() {
       {
         accessorKey: "site",
         header: "Site",
-        cell: (c) => <SiteCell site={c.getValue() as string} vip={c.row.original.vip} />,
+        cell: (c) => (
+          <SiteCell
+            site={c.getValue() as string}
+            vip={c.row.original.vip}
+            info={c.row.original}
+            icons={icons}
+          />
+        ),
       },
       {
         id: "cell",
@@ -107,7 +117,7 @@ function AlarmsView() {
         header: "Region",
         cell: (c) => (c.getValue() as string | null) ?? <span className="text-slate-400">—</span>,
       },
-      ...siteMasterColumns<ActiveAlarm>(),
+      ...siteMasterColumns<ActiveAlarm>(icons),
       {
         accessorKey: "alarmTime",
         header: "Raised",
@@ -127,7 +137,7 @@ function AlarmsView() {
         ),
       },
     ],
-    [timeZone, now, alertHours],
+    [timeZone, now, alertHours, icons],
   );
 
   const exportQuery = new URLSearchParams(query);
@@ -203,6 +213,9 @@ function AlarmsView() {
         getRowId={(r) => String(r.id)}
         loading={loading && !data}
         empty="No active alarms — all clear"
+        hiddenColumns={display.hiddenColumns.active}
+        groupBy={display.groupBySite ? (r) => r.siteCode ?? r.site : undefined}
+        groupNoun="alarms"
         rowClassName={(r) =>
           cn(CATEGORY_STRIPE[r.category], isAlert(r) && "bg-red-50/70 hover:bg-red-50")
         }
@@ -213,6 +226,7 @@ function AlarmsView() {
             site={r.site}
             cell={r.cellName ?? r.device}
             info={r}
+            icons={icons}
             alert={isAlert(r)}
             meta={formatDateTime(r.alarmTime, timeZone)}
             right={<AgeBadge minutes={ageMinutes(r.alarmTime, now)} alert={isAlert(r)} />}

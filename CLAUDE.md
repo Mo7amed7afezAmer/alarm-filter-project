@@ -420,6 +420,18 @@ Mobile: list + read-only table with the same filters.
       slate-900 = brightest text), `bg-white` = navy card, tinted colours 50–300 = dark tints and
       700–900 = light text, `brand` (teal) = primary/selected. Dark only, no light toggle.
       Sidebar = `components/nav.tsx` (fixed w-64 on md+, drawer + top bar below md).)
+      (2026-10-22, user request: settings redesign. Settings is for EVERY user now, with its own
+      section sidebar (`app/(app)/settings/layout.tsx`, routes /settings/general | notifications |
+      alarms/display | alarms/classification | users | office | reprocess | gmail | site-master,
+      shown by role). /preferences and /notifications redirect to /settings/notifications.
+      Per-user UI settings in `users.uiPrefs` (migration `20261022000000_user_ui_prefs`,
+      `packages/core/src/uiPrefs.ts`, GET|PUT `/api/me/ui-prefs`, auto-saved by
+      `components/ui-prefs.tsx`): theme `blue` (the navy default) | `dark` | `light`, rendered as
+      `<html data-theme>` by the root layout; VIP / Nodality / Battery as icons; hidden columns per
+      table (active / cleared); "one row per site code" grouping (siteCode ?? site, current page
+      only; click the row to expand). Themes: every Tailwind colour is a CSS variable generated per
+      theme in `tailwind.config.ts`; the sidebar stays dark in the light theme (data-theme="blue"
+      on it). Integration tests share alarms_test — run them with `--no-file-parallelism`.)
 - [x] REST API moved to NestJS (2026-10-21, user request, for React Native): see "NestJS API" below.
 - [ ] Phase 8 — full compose, backups, LAN access, 24h parallel run, RUNBOOK
       (RUNBOOK.md started with the hourly section; `apps/web/Dockerfile` exists but `web` is

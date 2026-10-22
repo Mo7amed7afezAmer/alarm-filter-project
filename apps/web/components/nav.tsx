@@ -14,22 +14,22 @@ import {
   Menu,
   RadioTower,
   Settings,
-  UserCog,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABEL } from "@alarm/core";
 import { cn } from "@/lib/utils";
 import { useAppConfig } from "./app-config";
+import { useUiPrefs } from "./ui-prefs";
 import { NotificationBell } from "./notification-bell";
 
-const LINKS: { href: string; label: string; icon: LucideIcon; admin?: boolean }[] = [
+const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/alarms", label: "Alarms", icon: BellRing },
   { href: "/cleared", label: "Cleared", icon: CircleCheck },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/hourly", label: "Hourly Alarms", icon: FileClock },
-  { href: "/preferences", label: "My preferences", icon: UserCog },
-  { href: "/settings", label: "Settings", icon: Settings, admin: true },
+  // Every user: personal settings (theme, alarm display, notifications); admins see more there.
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 /** md breakpoint: the sidebar is fixed on the left; below it a top bar opens it as a drawer. */
@@ -81,7 +81,6 @@ function OfficePill({ office }: { office: string }) {
 function SidebarContent({ bell }: { bell: boolean }) {
   const path = usePathname();
   const { role, email, office } = useAppConfig();
-  const links = LINKS.filter((l) => !l.admin || role === "ADMIN" || role === "SUPER_ADMIN");
   const isActive = (href: string) => path.startsWith(href);
 
   return (
@@ -98,7 +97,7 @@ function SidebarContent({ bell }: { bell: boolean }) {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        {links.map(({ href, label, icon: Icon }) => (
+        {LINKS.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
@@ -141,6 +140,9 @@ function SidebarContent({ bell }: { bell: boolean }) {
 
 export function Nav() {
   const path = usePathname();
+  // The sidebar stays dark in the light theme (the variables are re-set on these elements).
+  const { theme } = useUiPrefs().prefs;
+  const barTheme = theme === "light" ? "blue" : undefined;
   const desktop = useIsDesktop();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]); // close the drawer after navigating
@@ -148,12 +150,16 @@ export function Nav() {
   return (
     <>
       {/* Desktop: fixed sidebar. Only one NotificationBell is mounted (it polls and beeps). */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar md:block">
+      <aside
+        data-theme={barTheme}
+        className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar md:block">
         <SidebarContent bell={desktop === true} />
       </aside>
 
       {/* Phone / tablet: top bar + drawer. */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-4 md:hidden">
+      <header
+        data-theme={barTheme}
+        className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-4 md:hidden">
         <Logo />
         <div className="flex items-center gap-1">
           {desktop === false && <NotificationBell />}
@@ -168,7 +174,7 @@ export function Nav() {
         </div>
       </header>
       {open && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div data-theme={barTheme} className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-sidebar-border bg-sidebar shadow-xl">
             <SidebarContent bell={false} />

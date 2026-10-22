@@ -144,6 +144,9 @@ model User {
   notificationsSeenAt DateTime?
   /// Alarm types this user hides from THEIR pages only: { hiddenCategories, hiddenAlarmNames }.
   displayPrefs        Json?
+  /// Personal UI settings: theme, alarm table columns, site info icons, grouping
+  /// (see packages/core/src/uiPrefs.ts). Null = defaults.
+  uiPrefs             Json?
 
   @@map("users")
 }
