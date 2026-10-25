@@ -59,7 +59,7 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
       { href: "/settings/office", label: "Office view", icon: Building2, roles: SUPER },
       { href: "/settings/reprocess", label: "Reprocess", icon: RefreshCw, roles: SUPER },
       { href: "/settings/gmail", label: "Gmail connection", icon: Mail, roles: SUPER },
-      { href: "/settings/site-master", label: "Site Master", icon: Building2, roles: SUPER },
+      { href: "/settings/site-master", label: "Value normalization", icon: Building2, roles: SUPER },
     ],
   },
 ];

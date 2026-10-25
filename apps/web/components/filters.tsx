@@ -98,10 +98,18 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 /** Always visible from `sm` up; on phones collapsed behind a "Filters" toggle so the list is
  *  visible first. `active` = number of filters currently set (shown on the toggle). */
-export function FilterBar({ children, active = 0 }: { children: ReactNode; active?: number }) {
+export function FilterBar({
+  children,
+  active = 0,
+  className,
+}: {
+  children: ReactNode;
+  active?: number;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>
       <button
         type="button"
         className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 sm:hidden"

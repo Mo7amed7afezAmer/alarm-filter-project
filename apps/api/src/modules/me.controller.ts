@@ -31,9 +31,11 @@ const prefsBody = z.object({
 const uiPrefsBody = z.object({
   theme: z.string().max(20),
   alarms: z.object({
+    view: z.string().max(10).optional(),
     siteInfoIcons: z.boolean(),
     groupBySite: z.boolean(),
     hiddenColumns: z.record(z.array(z.string().max(40)).max(40)),
+    mail: z.record(z.boolean()).optional(),
   }),
   // Hourly output settings: shapes are checked loosely here, normalizeHourlyPrefs cleans them.
   hourly: z

@@ -63,7 +63,7 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     await api.stop();
   });
 
-  it("imports SiteMaster (super admin only) with an upsert summary", async () => {
+  it("imports SiteMaster (operators cannot) with an upsert summary", async () => {
     const { readFile } = await import("node:fs/promises");
     const data = await readFile(SITE_MASTER);
     const body = () => {
@@ -73,8 +73,6 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     };
 
     as("OPERATOR");
-    expect((await call("/api/site-master/import", { method: "POST", body: body() })).status).toBe(403);
-    as("ADMIN"); // office admin
     expect((await call("/api/site-master/import", { method: "POST", body: body() })).status).toBe(403);
 
     as("SUPER_ADMIN");

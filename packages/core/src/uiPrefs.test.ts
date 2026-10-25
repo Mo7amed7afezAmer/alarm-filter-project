@@ -13,20 +13,30 @@ describe("normalizeUiPrefs", () => {
     const p = normalizeUiPrefs({
       theme: "light",
       alarms: {
+        view: "table",
         siteInfoIcons: true,
         groupBySite: true,
         hiddenColumns: { active: ["region", "age"], cleared: ["clearType"] },
+        mail: { phone: false, received: true, nope: true },
       },
     });
     expect(p).toEqual({
       theme: "light",
       alarms: {
+        view: "table",
         siteInfoIcons: true,
         groupBySite: true,
         hiddenColumns: { active: ["region", "age"], cleared: ["clearType"] },
+        mail: { ...DEFAULT_UI_PREFS.alarms.mail, phone: false, received: true },
       },
       hourly: DEFAULT_HOURLY_PREFS,
     });
+  });
+
+  it("defaults to the mail view with age, cell / device and the call button", () => {
+    const { view, mail } = DEFAULT_UI_PREFS.alarms;
+    expect(view).toBe("mail");
+    expect(mail).toMatchObject({ tags: true, age: true, cellDevice: true, phone: true });
   });
 
   it("drops unknown, required and duplicate column ids", () => {

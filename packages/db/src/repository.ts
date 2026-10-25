@@ -29,6 +29,8 @@ const alarmSelect = {
   cellName: true,
   device: true,
   office: true,
+  rawMessageId: true,
+  clearMessageId: true,
 } as const;
 
 export class PrismaAlarmRepository implements AlarmRepository {
@@ -96,7 +98,13 @@ export class PrismaAlarmRepository implements AlarmRepository {
     await this.db.alarm.deleteMany({ where: { alarmTime: { gte: since } } });
     await this.db.alarm.updateMany({
       where: { clearTime: { gte: since } },
-      data: { status: "ACTIVE", clearTime: null, clearType: null, durationMin: null },
+      data: {
+        status: "ACTIVE",
+        clearTime: null,
+        clearType: null,
+        durationMin: null,
+        clearMessageId: null,
+      },
     });
     await this.db.orphanClear.deleteMany({ where: { rawMessage: { receivedAt: { gte: since } } } });
   }

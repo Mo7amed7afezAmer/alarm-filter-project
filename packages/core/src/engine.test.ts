@@ -157,6 +157,24 @@ describe("required cases (CLAUDE.md §7)", () => {
     });
   });
 
+  it("links each alarm to its alarm mail and the Clear mail that closed it", async () => {
+    const alarm = mail(subj("11-OCT-2026 16:00:00"), "2026-10-11T13:02:00Z");
+    const clear = mail(subj("11-OCT-2026 16:00:00", { clear: true }), "2026-10-11T14:00:00Z");
+    await engine.processBatch([alarm, clear]);
+    expect(alarmsByKey()[0]).toMatchObject({ rawMessageId: alarm.id, clearMessageId: clear.id });
+
+    // Orphan Clear consumed later → the orphan's raw message; superseded → no Clear mail.
+    const orphan = mail(subj("11-OCT-2026 18:00:00", { clear: true }), "2026-10-11T15:30:00Z");
+    await engine.processBatch([orphan]);
+    const late = mail(subj("11-OCT-2026 18:00:00"), "2026-10-11T15:31:00Z");
+    await engine.processBatch([late]);
+    expect(alarmsByKey()[1]).toMatchObject({ rawMessageId: late.id, clearMessageId: orphan.id });
+
+    await engine.processBatch([mail(subj("11-OCT-2026 19:00:00"), "2026-10-11T16:01:00Z")]);
+    await engine.processBatch([mail(subj("11-OCT-2026 20:00:00"), "2026-10-11T17:01:00Z")]);
+    expect(alarmsByKey()[2]).toMatchObject({ clearType: "AUTO_SUPERSEDED", clearMessageId: null });
+  });
+
   it("7. subject that does not parse is kept with parse_error, no alarm", async () => {
     const m = mail("Weekly report — please review", "2026-10-11T13:00:00Z");
     const s = await engine.processBatch([m]);

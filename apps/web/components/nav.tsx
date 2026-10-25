@@ -28,6 +28,7 @@ const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/cleared", label: "Cleared", icon: CircleCheck },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/hourly", label: "Hourly Alarms", icon: FileClock },
+  { href: "/site-master", label: "Site Master", icon: Building2 },
   // Every user: personal settings (theme, alarm display, notifications); admins see more there.
   { href: "/settings", label: "Settings", icon: Settings },
 ];

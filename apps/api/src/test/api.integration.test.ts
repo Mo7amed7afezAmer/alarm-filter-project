@@ -107,7 +107,10 @@ describe.skipIf(!url)("API integration", () => {
         json: { email: EMAIL.toUpperCase(), password: "password1" },
       });
       expect(ok.status).toBe(200);
-      expect(ok.body).toMatchObject({ tokenType: "Bearer", user: { email: EMAIL, role: "VIEWER", office: OFFICE } });
+      expect(ok.body).toMatchObject({
+        tokenType: "Bearer",
+        user: { email: EMAIL, role: "VIEWER", office: OFFICE },
+      });
       const auth = { authorization: `Bearer ${ok.body.token}` };
 
       const me = await api.call("/api/me", { headers: auth });
@@ -116,7 +119,9 @@ describe.skipIf(!url)("API integration", () => {
       const list = await api.call(`/api/alarms/active?site=${PREFIX}`, { headers: auth });
       expect(list.body.total).toBe(2);
 
-      expect((await api.call("/api/me", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
+      expect(
+        (await api.call("/api/me", { headers: { authorization: "Bearer nope" } })).status,
+      ).toBe(401);
     });
 
     it("accepts the NextAuth session cookie the web pages send", async () => {
@@ -127,12 +132,16 @@ describe.skipIf(!url)("API integration", () => {
         token: { sub: String(id), email: EMAIL, role: "VIEWER" },
         secret: process.env.NEXTAUTH_SECRET!,
       });
-      const r = await api.call("/api/me", { headers: { cookie: `next-auth.session-token=${token}` } });
+      const r = await api.call("/api/me", {
+        headers: { cookie: `next-auth.session-token=${token}` },
+      });
       expect(r.status).toBe(200);
       expect(r.body.user.email).toBe(EMAIL);
 
       const forged = await encode({ token: { sub: String(id) }, secret: "some-other-secret" });
-      const f = await api.call("/api/me", { headers: { cookie: `next-auth.session-token=${forged}` } });
+      const f = await api.call("/api/me", {
+        headers: { cookie: `next-auth.session-token=${forged}` },
+      });
       expect(f.status).toBe(401);
     });
 
@@ -184,7 +193,14 @@ describe.skipIf(!url)("API integration", () => {
       const site = "SMJOIN_LWG_S_BH-TEST_9Z98ZT";
       await prisma.siteMaster.upsert({
         where: { code: "9Z98ZT" },
-        create: { code: "9Z98ZT", office: "TEST", vip: true, nodality: "1+3", battery: "YES", phone: "01012345678" },
+        create: {
+          code: "9Z98ZT",
+          office: "TEST",
+          vip: true,
+          nodality: "1+3",
+          battery: "YES",
+          phone: "01012345678",
+        },
         update: { vip: true, nodality: "1+3", battery: "YES", phone: "01012345678" },
       });
       await prisma.alarm.create({
@@ -211,6 +227,71 @@ describe.skipIf(!url)("API integration", () => {
       } finally {
         await prisma.alarm.deleteMany({ where: { site } });
         await prisma.siteMaster.delete({ where: { code: "9Z98ZT" } });
+      }
+    });
+
+    it("search, site tags, category counts (tabs) and the super admin's office filter", async () => {
+      const sites = { gen: `TAGS_S_BH-GEN_9Z97ZT`, vf: `TAGS_S_BH-VF_9Z96ZT` };
+      await prisma.siteMaster.createMany({
+        data: [
+          { code: "9Z97ZT", office: "TEST", vip: true, nodality: "1+0", powerSource: "EC+DG" },
+          { code: "9Z96ZT", office: "TEST", vip: false, nodality: "1+2", powerSource: "DG/VF" },
+        ],
+      });
+      await prisma.alarm.createMany({
+        data: [
+          {
+            site: sites.gen,
+            siteCode: "9Z97ZT",
+            category: "DOWN" as const,
+            cellName: "CELL_TAGS_1",
+          },
+          { site: sites.vf, siteCode: "9Z96ZT", category: "POWER" as const, cellName: null },
+        ].map((a) => ({
+          ...a,
+          alarmKey: `X||${a.site}`,
+          alarmName: "S_D_N_TAGS",
+          alarmTime: new Date(),
+          status: "ACTIVE" as const,
+          office: OFFICE,
+        })),
+      });
+      const sitesOf = (body: { items: { site: string }[] }) => body.items.map((a) => a.site).sort();
+      try {
+        as("VIEWER");
+        const all = await get("/api/alarms/active?q=tags_s_bh");
+        expect(all.body.total).toBe(2);
+        expect(all.body.categories).toEqual({ DOWN: 1, POWER: 1 });
+        expect(all.body.offices).toEqual([]); // office users get no office filter
+        expect(sitesOf((await get("/api/alarms/active?q=cell_tags")).body)).toEqual([sites.gen]);
+        expect(sitesOf((await get("/api/alarms/active?q=9Z96ZT")).body)).toEqual([sites.vf]);
+
+        const tag = async (flag: string) =>
+          sitesOf((await get(`/api/alarms/active?q=TAGS_S_BH&flag=${flag}`)).body);
+        expect(await tag("vip")).toEqual([sites.gen]);
+        expect(await tag("nodal")).toEqual([sites.vf]);
+        // DG/VF = another company's generator → not a generator site.
+        expect(await tag("generator")).toEqual([sites.gen]);
+        expect((await get("/api/alarms/active?flag=solar")).status).toBe(400);
+
+        // The tab counts ignore the selected category.
+        const down = await get("/api/alarms/active?q=TAGS_S_BH&category=DOWN");
+        expect(down.body.total).toBe(1);
+        expect(down.body.categories).toEqual({ DOWN: 1, POWER: 1 });
+
+        // Office filter: only for the super admin viewing all offices; ignored for others.
+        expect((await get(`/api/alarms/active?q=TAGS_S_BH&office=ZZ/Other`)).body.total).toBe(2);
+        as("SUPER_ADMIN");
+        const sa = await get("/api/alarms/active?q=TAGS_S_BH");
+        expect(sa.body.offices).toEqual([{ office: OFFICE, count: 2 }]);
+        expect((await get(`/api/alarms/active?q=TAGS_S_BH&office=ZZ/Other`)).body.total).toBe(0);
+        expect(
+          (await get(`/api/alarms/active?q=TAGS_S_BH&office=${encodeURIComponent(OFFICE)}`)).body
+            .total,
+        ).toBe(2);
+      } finally {
+        await prisma.alarm.deleteMany({ where: { site: { in: Object.values(sites) } } });
+        await prisma.siteMaster.deleteMany({ where: { code: { in: ["9Z97ZT", "9Z96ZT"] } } });
       }
     });
 
@@ -333,10 +414,16 @@ describe.skipIf(!url)("API integration", () => {
         expect((await get(path)).body.total).toBe(0); // no office = nothing
         as("SUPER_ADMIN"); // office null = all offices
         expect((await get(path)).body.total).toBe(2);
-        await prisma.user.update({ where: { id: Number(users.SUPER_ADMIN) }, data: { office: "ZZ/Elsewhere" } });
+        await prisma.user.update({
+          where: { id: Number(users.SUPER_ADMIN) },
+          data: { office: "ZZ/Elsewhere" },
+        });
         expect((await get(path)).body.total).toBe(0);
       } finally {
-        await prisma.user.update({ where: { id: Number(users.SUPER_ADMIN) }, data: { office: null } });
+        await prisma.user.update({
+          where: { id: Number(users.SUPER_ADMIN) },
+          data: { office: null },
+        });
         await prisma.user.deleteMany({ where: { id: { in: [other.id, none.id] } } });
       }
     });
@@ -368,12 +455,18 @@ describe.skipIf(!url)("API integration", () => {
       expect(emails).not.toContain(`${PREFIX.toLowerCase()}-super_admin@test.local`);
 
       // Office in the body is ignored/forbidden: always their own office.
-      expect((await send("POST", { email: NEW, password: "password1", office: "ZZ/Elsewhere" })).status).toBe(403);
+      expect(
+        (await send("POST", { email: NEW, password: "password1", office: "ZZ/Elsewhere" })).status,
+      ).toBe(403);
       const created = await send("POST", { email: NEW, password: "password1" });
       expect(created.status).toBe(201);
       expect(created.body.user).toMatchObject({ role: "VIEWER", office: OFFICE });
-      expect((await send("POST", { email: "x-" + NEW, password: "password1", role: "ADMIN" })).status).toBe(403);
-      expect((await send("PATCH", { id: created.body.user.id, role: "SUPER_ADMIN" })).status).toBe(403);
+      expect(
+        (await send("POST", { email: "x-" + NEW, password: "password1", role: "ADMIN" })).status,
+      ).toBe(403);
+      expect((await send("PATCH", { id: created.body.user.id, role: "SUPER_ADMIN" })).status).toBe(
+        403,
+      );
 
       expect((await send("DELETE", undefined, `?id=${foreign.id}`)).status).toBe(404);
       expect((await send("DELETE", undefined, `?id=${users.ADMIN}`)).status).toBe(400);
@@ -382,10 +475,17 @@ describe.skipIf(!url)("API integration", () => {
 
     it("super admin creates an office admin for any office", async () => {
       as("SUPER_ADMIN");
-      const r = await send("POST", { email: NEW, password: "password1", role: "ADMIN", office: OFFICE });
+      const r = await send("POST", {
+        email: NEW,
+        password: "password1",
+        role: "ADMIN",
+        office: OFFICE,
+      });
       expect(r.status).toBe(201);
       expect(r.body.user).toMatchObject({ role: "ADMIN", office: OFFICE });
-      expect((await send("POST", { email: "y-" + NEW, password: "password1", role: "VIEWER" })).status).toBe(403);
+      expect(
+        (await send("POST", { email: "y-" + NEW, password: "password1", role: "VIEWER" })).status,
+      ).toBe(403);
     });
   });
 });

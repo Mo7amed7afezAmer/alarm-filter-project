@@ -66,3 +66,50 @@ describe.skipIf(!SITE_MASTER_XLSX)("SiteMaster fixture phones", () => {
     for (const r of phones) expect(r.phone).toMatch(/^(\+?\d{6,15})( \/ \+?\d{6,15})*$/);
   });
 });
+
+describe("parseSiteMasterXlsx network DB layout (DNTH DB)", () => {
+  async function dnth(): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const sites = wb.addWorksheet("Sites");
+    sites.addRow(["Site Code", "Site Name", "SC Office", "OZ", "Nodal Deg.", "Cascade Type", "VIP", "Battaries Status"]);
+    sites.addRow(["0014DE", "BH-DAMANHUR1", "DAMANHOUR", "Delta North", 1, "End Point", "No", "Faulty Batteries"]);
+    sites.addRow(["0582DE", "BH-BUSTAN", "DAMANHOUR", "Delta North", 4, "Nodal", "Yes", "No Batteries - D9"]);
+    sites.addRow(["1052DE", "PS-I-LORD", "PORTSAID", "Delta North", 2, "Low cascade", "No", ""]);
+    sites.addRow(["0014DE", "BH-DAMANHUR1", "DAMANHOUR", "Delta North", 1, "End Point", "No", ""]);
+    const gen = wb.addWorksheet("OR GEN Sites");
+    gen.addRow(["Site Code", "Site Name", "Nodal Degree (Integer)", "Operational Zone", "Office", "Host", "Power Configuration", "Operation Mode"]);
+    gen.addRow(["0582DE", "BH-BUSTAN", "1+3", "NTH", "Damanhur", "OR", "HGB", "HGB"]);
+    gen.addRow(["4170DE", "BH-EZB-BSNTWI2", "1+0", "NTH", "Damanhur", "OR", "DG", "Cont."]);
+    const dis = wb.addWorksheet("Dismantle ");
+    dis.addRow(["Short Code", "Site Name", "SC Office"]);
+    dis.addRow(["1052DE", "PS-I-LORD", "PORTSAID"]);
+    const rental = wb.addWorksheet("Rental GEN");
+    rental.addRow(["Site Code", "Site Name", "Power source"]);
+    rental.addRow(["0D16DE", "BH-HK-BSTRH", "Rental"]);
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it("reads Sites, converts the nodal degree, and lists the columns it provides", async () => {
+    const p = await parseSiteMasterXlsx(await dnth());
+    expect(p.rows.map((r) => [r.code, r.office, r.nodality, r.siteType, r.vip, r.battery])).toEqual([
+      ["0014DE", "DAMANHOUR", "1+0", "End Point", false, "Faulty Batteries"],
+      ["0582DE", "DAMANHOUR", "1+3", "Nodal", true, "No Batteries - D9"],
+    ]);
+    // No phone / location / power column on Sites → those fields must not be overwritten.
+    expect(p.columns.sort()).toEqual(["battery", "nodality", "office", "siteName", "siteType", "vip"]);
+    expect(p.skipped).toEqual([
+      { row: 4, code: "1052DE", reason: "dismantled" },
+      { row: 5, code: "0014DE", reason: "duplicate code in file" },
+    ]);
+    expect(p.dismantled).toEqual(["1052DE"]);
+  });
+
+  it("takes the power source from the generator sheets as patches", async () => {
+    const p = await parseSiteMasterXlsx(await dnth());
+    expect(p.patches).toEqual([
+      { code: "0582DE", powerSource: "HGB" },
+      { code: "4170DE", powerSource: "DG" },
+      { code: "0D16DE", powerSource: "Rental GEN" },
+    ]);
+  });
+});

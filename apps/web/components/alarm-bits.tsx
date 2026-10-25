@@ -1,8 +1,9 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { BatteryMedium, Clock, Crown, MapPin, Network, Phone, RadioTower } from "lucide-react";
+import { BatteryMedium, Clock, MapPin, Network, Phone, RadioTower } from "lucide-react";
 import type { ReactNode } from "react";
 import { CATEGORY_STRIPE, splitAlarmName } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { SiteTags } from "./alarm-mail";
 import { CategoryBadge } from "./badges";
 
 /** Alarm name without the vendor prefix (shown as a small tag); full name on hover. */
@@ -31,11 +32,12 @@ export interface SiteMasterInfo {
   nodality: string | null;
   battery: string | null;
   phone: string | null;
+  powerSource?: string | null;
 }
 
 export function VipBadge() {
   return (
-    <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+    <span className="shrink-0 rounded-sm bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
       VIP
     </span>
   );
@@ -47,7 +49,12 @@ export function PhoneLink({ value, className }: { value: string | null; classNam
   return (
     <span className={cn("inline-flex flex-wrap gap-x-2", className)}>
       {value.split(" / ").map((n) => (
-        <a key={n} href={`tel:${n}`} className="font-mono text-xs text-sky-700 hover:underline" dir="ltr">
+        <a
+          key={n}
+          href={`tel:${n}`}
+          className="font-mono text-xs text-sky-700 hover:underline"
+          dir="ltr"
+        >
           {n}
         </a>
       ))}
@@ -55,39 +62,12 @@ export function PhoneLink({ value, className }: { value: string | null; classNam
   );
 }
 
-/** VIP / Nodality / Battery as small icons (value on hover) — the "icons" display setting. */
+/** VIP / NODAL / BATT / GEN as text tags (value on hover) — the "tags" display setting. */
 export function SiteInfoIcons({ info }: { info: SiteMasterInfo }) {
-  const chip = "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded";
-  return (
-    <span className="inline-flex items-center gap-1">
-      {info.vip && (
-        <span className={cn(chip, "bg-rose-600 text-white")} title="VIP site" aria-label="VIP site">
-          <Crown className="h-3 w-3" />
-        </span>
-      )}
-      {info.nodality && (
-        <span
-          className={cn(chip, "bg-violet-100 text-violet-700")}
-          title={`Nodality: ${info.nodality}`}
-          aria-label={`Nodality: ${info.nodality}`}
-        >
-          <Network className="h-3 w-3" />
-        </span>
-      )}
-      {info.battery && (
-        <span
-          className={cn(chip, "bg-emerald-100 text-emerald-700")}
-          title={`Battery: ${info.battery}`}
-          aria-label={`Battery: ${info.battery}`}
-        >
-          <BatteryMedium className="h-3 w-3" />
-        </span>
-      )}
-    </span>
-  );
+  return <SiteTags s={info} />;
 }
 
-/** Site name + VIP badge, or + VIP / Nodality / Battery icons when `icons` is on. */
+/** Site name + VIP badge, or + the VIP / NODAL / BATT / GEN tags when `icons` is on. */
 export function SiteCell({
   site,
   vip,
@@ -110,7 +90,9 @@ export function SiteCell({
 const dash = <span className="text-slate-400">—</span>;
 
 /** Nodality / Battery / Phone columns from Site Master (only Phone when shown as icons). */
-export function siteMasterColumns<T extends SiteMasterInfo>(icons = false): ColumnDef<T, unknown>[] {
+export function siteMasterColumns<T extends SiteMasterInfo>(
+  icons = false,
+): ColumnDef<T, unknown>[] {
   const phone: ColumnDef<T, unknown> = {
     accessorKey: "phone",
     header: "Phone",

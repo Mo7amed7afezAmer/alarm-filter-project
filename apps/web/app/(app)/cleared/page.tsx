@@ -4,14 +4,8 @@ import { zonedToUtc } from "@alarm/core";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Download } from "lucide-react";
 import { Suspense, useMemo } from "react";
-import {
-  AlarmCard,
-  AlarmName,
-  Mono,
-  siteMasterColumns,
-  SiteCell,
-  type SiteMasterInfo,
-} from "@/components/alarm-bits";
+import { AlarmCard, AlarmName, Mono, siteMasterColumns, SiteCell } from "@/components/alarm-bits";
+import { AlarmMailList, type MailAlarm } from "@/components/alarm-mail";
 import { useAppConfig } from "@/components/app-config";
 import { CategoryBadge, ClearTypeBadge } from "@/components/badges";
 import { DataTable, Pager } from "@/components/data-table";
@@ -20,21 +14,14 @@ import { PageHeader } from "@/components/page-header";
 import { useUiPrefs } from "@/components/ui-prefs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { usePoll } from "@/components/use-poll";
+import { useNow, usePoll } from "@/components/use-poll";
 import { CATEGORY_STRIPE, dateInputValue, formatDateTime, formatMinutes } from "@/lib/format";
 
-interface ClearedAlarm extends SiteMasterInfo {
-  id: number;
-  alarmName: string;
-  site: string;
-  category: string;
-  alarmTime: string;
+interface ClearedAlarm extends MailAlarm {
   clearTime: string;
   durationMin: number | null;
   clearType: string | null;
   region: string | null;
-  cellName: string | null;
-  device: string | null;
 }
 
 interface Page<T> {
@@ -60,7 +47,9 @@ function Duration({ min }: { min: number | null }) {
 function ClearedView() {
   const { timeZone } = useAppConfig();
   const { params, set } = useUrlFilters();
-  const { alarms: display } = useUiPrefs().prefs;
+  const now = useNow(30_000);
+  const { prefs } = useUiPrefs();
+  const display = prefs.alarms;
   const icons = display.siteInfoIcons;
   const today = dateInputValue(new Date(), timeZone);
   const yesterday = dateInputValue(new Date(Date.now() - 86_400_000), timeZone);
@@ -155,12 +144,14 @@ function ClearedView() {
         count={data?.total}
         subtitle={`By clear time · ${timeZone} days`}
         actions={
-          <Button size="sm" variant="outline" className="bg-white" asChild>
-            <a href={`/api/export?${exportQuery}`}>
-              <Download className="h-4 w-4" />
-              Export
-            </a>
-          </Button>
+          <>
+            <Button size="sm" variant="outline" className="bg-white" asChild>
+              <a href={`/api/export?${exportQuery}`}>
+                <Download className="h-4 w-4" />
+                Export
+              </a>
+            </Button>
+          </>
         }
       />
 
@@ -202,38 +193,57 @@ function ClearedView() {
           Could not load: {error}
         </p>
       )}
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        getRowId={(r) => String(r.id)}
-        loading={loading && !data}
-        empty="No cleared alarms in this range"
-        hiddenColumns={display.hiddenColumns.cleared}
-        groupBy={display.groupBySite ? (r) => r.siteCode ?? r.site : undefined}
-        groupNoun="alarms"
-        rowClassName={(r) => CATEGORY_STRIPE[r.category]}
-        renderCard={(r) => (
-          <AlarmCard
-            alarmName={r.alarmName}
-            category={r.category}
-            site={r.site}
-            cell={r.cellName ?? r.device}
-            info={r}
-            icons={icons}
-            meta={
-              <span>
-                {formatDateTime(r.alarmTime, timeZone)} → {formatDateTime(r.clearTime, timeZone)}
-              </span>
-            }
-            right={
-              <span className="flex items-center gap-2">
+      {display.view === "mail" ? (
+        <AlarmMailList
+          items={data?.items ?? []}
+          cleared
+          now={now}
+          timeZone={timeZone}
+          loading={loading && !data}
+          empty="No cleared alarms in this range"
+          age={(r) => (
+            <span className="flex items-center gap-1.5" title="Duration">
+              <ClearTypeBadge value={r.clearType} />
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
                 <Duration min={r.durationMin} />
-                <ClearTypeBadge value={r.clearType} />
               </span>
-            }
-          />
-        )}
-      />
+            </span>
+          )}
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={data?.items ?? []}
+          getRowId={(r) => String(r.id)}
+          loading={loading && !data}
+          empty="No cleared alarms in this range"
+          hiddenColumns={display.hiddenColumns.cleared}
+          groupBy={display.groupBySite ? (r) => r.siteCode ?? r.site : undefined}
+          groupNoun="alarms"
+          rowClassName={(r) => CATEGORY_STRIPE[r.category]}
+          renderCard={(r) => (
+            <AlarmCard
+              alarmName={r.alarmName}
+              category={r.category}
+              site={r.site}
+              cell={r.cellName ?? r.device}
+              info={r}
+              icons={icons}
+              meta={
+                <span>
+                  {formatDateTime(r.alarmTime, timeZone)} → {formatDateTime(r.clearTime, timeZone)}
+                </span>
+              }
+              right={
+                <span className="flex items-center gap-2">
+                  <Duration min={r.durationMin} />
+                  <ClearTypeBadge value={r.clearType} />
+                </span>
+              }
+            />
+          )}
+        />
+      )}
       {data && (
         <Pager
           page={data.page}

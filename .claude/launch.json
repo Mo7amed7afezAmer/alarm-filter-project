@@ -82,6 +82,16 @@
       }
     },
     {
+      "name": "api-tour-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@alarm/api", "dev"],
+      "port": 4110,
+      "env": {
+        "API_PORT": "4110",
+        "HOURLY_GMAIL_MOCK_DIR": "../../docs/video/.tour-fixtures"
+      }
+    },
+    {
       "name": "web-via-api-mock",
       "runtimeExecutable": "corepack",
       "runtimeArgs": ["pnpm", "--filter", "@alarm/web", "exec", "next", "dev", "-p", "3310"],

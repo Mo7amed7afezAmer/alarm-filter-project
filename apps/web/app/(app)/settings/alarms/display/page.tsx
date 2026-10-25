@@ -2,8 +2,9 @@
 
 import { Check, Lock } from "lucide-react";
 import { useState } from "react";
-import { ALARM_COLUMNS, type AlarmTable, type UiPrefs } from "@alarm/core";
+import { ALARM_COLUMNS, MAIL_PARTS, type AlarmTable, type UiPrefs } from "@alarm/core";
 import { SiteCell, type SiteMasterInfo } from "@/components/alarm-bits";
+import { AlarmMailList, ViewSwitch, type MailAlarm } from "@/components/alarm-mail";
 import { useAppConfig } from "@/components/app-config";
 import { SectionHeader, Toggle } from "@/components/settings/section";
 import { TypesVisibilityEditor } from "@/components/types-visibility-editor";
@@ -11,16 +12,98 @@ import { useUiPrefs } from "@/components/ui-prefs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const TABLE_LABEL: Record<AlarmTable, string> = { active: "Active alarms", cleared: "Cleared alarms" };
+const TABLE_LABEL: Record<AlarmTable, string> = {
+  active: "Active alarms",
+  cleared: "Cleared alarms",
+};
 const SITE_INFO_COLUMNS = new Set(["nodality", "battery"]);
 
 const SAMPLE: SiteMasterInfo = {
   siteCode: "0H31DE",
   vip: true,
-  nodality: "Hub",
-  battery: "4 h",
+  nodality: "1+2",
+  battery: "YES",
   phone: null,
+  powerSource: "EC+DG",
 };
+
+/** Mail card preview with the user's settings. */
+const SAMPLE_MAIL: MailAlarm = {
+  ...SAMPLE,
+  id: 0,
+  alarmName: "S_D_N_BTS O&M LINK FAILURE",
+  site: "SRAN_S_BH-QMB-LOQIN_0H31DE",
+  category: "DOWN",
+  alarmTime: new Date(Date.now() - 95 * 60_000).toISOString(),
+  cellName: "A_BH-QMB-LOQIN_3_24313_S",
+  device: "cell",
+  office: null,
+  powerSource: "EC+DG",
+  phone: "01000000000",
+  rawMessage: {
+    subject:
+      "S_D_N_BTS O&M LINK FAILURE on #SRAN_S_BH-QMB-LOQIN_0H31DE# at |25-OCT-2026 09:51:54 |",
+    receivedAt: new Date(Date.now() - 93 * 60_000).toISOString(),
+    labels: ["Out of Area"],
+  },
+};
+
+function MailCard() {
+  const { timeZone } = useAppConfig();
+  const { prefs, update } = useUiPrefs();
+  const mail = prefs.alarms.mail;
+  return (
+    <Card className="rounded-xl border-slate-200 shadow-sm">
+      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle className="text-base">View</CardTitle>
+          <p className="text-sm text-slate-500">
+            How the Alarms and Cleared pages list alarms. The mail subject is always shown; pick the
+            other parts of a mail card.
+          </p>
+        </div>
+        <ViewSwitch
+          value={prefs.alarms.view}
+          onChange={(view) => update((p) => ({ ...p, alarms: { ...p.alarms, view } }))}
+        />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          {MAIL_PARTS.map((part) => (
+            <Toggle
+              key={part.id}
+              label={part.label}
+              hint={part.hint}
+              checked={mail[part.id]}
+              onChange={(v) =>
+                update((p) => ({
+                  ...p,
+                  alarms: { ...p.alarms, mail: { ...p.alarms.mail, [part.id]: v } },
+                }))
+              }
+            />
+          ))}
+        </div>
+        <div className="rounded-lg border border-dashed border-slate-300 p-3">
+          <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">
+            Preview
+          </span>
+          <AlarmMailList
+            items={[SAMPLE_MAIL]}
+            now={Date.now()}
+            timeZone={timeZone}
+            empty=""
+            age={() => (
+              <span className="rounded-sm bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                1h 35m
+              </span>
+            )}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 type Alarms = UiPrefs["alarms"];
 
@@ -89,7 +172,9 @@ function ColumnsCard() {
               >
                 <span>
                   {c.label}
-                  {asIcon && <span className="block text-[11px]">shown as an icon next to the site</span>}
+                  {asIcon && (
+                    <span className="block text-[11px]">shown as an icon next to the site</span>
+                  )}
                   {c.required && <span className="block text-[11px]">always shown</span>}
                 </span>
                 {locked ? (
@@ -140,15 +225,17 @@ export default function DisplaySettings() {
         subtitle="How the Alarms and Cleared pages look for you — saved to your account only."
       />
 
+      <MailCard />
+
       <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
         <Card className="rounded-xl border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Site details</CardTitle>
+            <CardTitle className="text-base">Site details (table)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Toggle
-              label="VIP, Nodality and Battery as icons"
-              hint="Small icons next to the site instead of the VIP badge and the Nodality / Battery columns. Hover an icon to read its value."
+              label="VIP, Nodal, Battery and Generator as tags"
+              hint="Small VIP / NODAL / BATT / GEN tags next to the site (only the ones it has) instead of the VIP badge and the Nodality / Battery columns. Hover a tag to read its value."
               checked={prefs.alarms.siteInfoIcons}
               onChange={(v) => set({ siteInfoIcons: v })}
             />
@@ -172,7 +259,7 @@ export default function DisplaySettings() {
 
         <Card className="rounded-xl border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Rows</CardTitle>
+            <CardTitle className="text-base">Rows (table)</CardTitle>
           </CardHeader>
           <CardContent>
             <Toggle

@@ -7,7 +7,7 @@ import { prisma } from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { ALARM_TZ, HttpError, paged, parseQuery, searchParams } from "../common/http.js";
 import { CurrentUser } from "../common/nest.js";
-import { officeFilter } from "../lib/office.js";
+import { getOffice, officeFilter } from "../lib/office.js";
 import {
   activeQuery,
   activeWhere,
@@ -32,11 +32,14 @@ function local(d: Date | null): string {
 
 @Controller()
 export class AlarmsController {
+  /** Also returns `categories` (count per category with every other filter applied — the page's
+   *  tabs) and, for a super admin viewing all offices, `offices` (count per office). */
   @Get("alarms/active")
   async active(@Req() req: Request, @CurrentUser() user: AuthUser) {
     const q = parseQuery(req, activeQuery);
     const where = await activeWhere(q, user.id);
-    const [total, rows] = await Promise.all([
+    const allOffices = (await getOffice(user.id)) === null;
+    const [total, rows, byCategory, byOffice] = await Promise.all([
       prisma.alarm.count({ where }),
       prisma.alarm.findMany({
         where,
@@ -45,8 +48,27 @@ export class AlarmsController {
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
       }),
+      prisma.alarm.groupBy({
+        by: ["category"],
+        where: await activeWhere({ ...q, category: undefined }, user.id),
+        _count: { _all: true },
+      }),
+      allOffices
+        ? prisma.alarm.groupBy({
+            by: ["office"],
+            where: await activeWhere({ ...q, office: undefined }, user.id),
+            _count: { _all: true },
+            orderBy: { office: "asc" },
+          })
+        : [],
     ]);
-    return paged(await withSiteInfo(rows), total, q.page, q.pageSize);
+    return {
+      ...paged(await withSiteInfo(rows), total, q.page, q.pageSize),
+      categories: Object.fromEntries(byCategory.map((c) => [c.category, c._count._all])),
+      offices: byOffice
+        .filter((o) => o.office)
+        .map((o) => ({ office: o.office as string, count: o._count._all })),
+    };
   }
 
   @Get("alarms/cleared")
@@ -89,7 +111,8 @@ export class AlarmsController {
     const names = rows
       .map((r) => {
         const hiddenByAdmin =
-          admin.hiddenCategories.includes(r.category) || admin.hiddenAlarmNames.includes(r.alarmName);
+          admin.hiddenCategories.includes(r.category) ||
+          admin.hiddenAlarmNames.includes(r.alarmName);
         const hiddenByMe =
           mine.hiddenCategories.includes(r.category) || mine.hiddenAlarmNames.includes(r.alarmName);
         return {
@@ -114,12 +137,19 @@ export class AlarmsController {
     const where =
       status === "active"
         ? await activeWhere(parseQuery(req, activeQuery.extend({ status: z.string() })), user.id)
-        : (await clearedWhere(parseQuery(req, clearedQuery.extend({ status: z.string() })), user.id))
-            .where;
+        : (
+            await clearedWhere(
+              parseQuery(req, clearedQuery.extend({ status: z.string() })),
+              user.id,
+            )
+          ).where;
 
     const count = await prisma.alarm.count({ where });
     if (count > MAX_EXPORT_ROWS)
-      throw new HttpError(413, `Too many rows (${count}); narrow the filters (max ${MAX_EXPORT_ROWS})`);
+      throw new HttpError(
+        413,
+        `Too many rows (${count}); narrow the filters (max ${MAX_EXPORT_ROWS})`,
+      );
 
     const rows = await withSiteInfo(
       await prisma.alarm.findMany({

@@ -26,6 +26,10 @@ export interface AlarmRecord {
   device: string | null;
   /** Gmail office label the alarm came from (e.g. "DN/Kafr ElDawar"). */
   office: string | null;
+  /** Raw message of the alarm mail. */
+  rawMessageId: number | null;
+  /** Raw message of the Clear mail that closed it (null when superseded / active). */
+  clearMessageId: number | null;
 }
 
 export type NewAlarm = Omit<AlarmRecord, "id">;
@@ -34,6 +38,7 @@ export interface ClosePatch {
   clearTime: Date;
   clearType: ClearType;
   durationMin: number;
+  clearMessageId: number | null;
 }
 
 export interface OrphanClearRecord {
@@ -196,6 +201,8 @@ export class MatchingEngine {
       cellName: v.cellName,
       device: v.device,
       office: msg.office ?? null,
+      rawMessageId: msg.id,
+      clearMessageId: null,
     };
 
     // With CONSEC_NBR every alarm is independent (user rule 2026-10-11): same name + site at a
@@ -217,6 +224,7 @@ export class MatchingEngine {
         clearType: "EMAIL",
         clearTime: orphan.clearTime,
         durationMin: durationMinutes(v.alarmTime, orphan.clearTime),
+        clearMessageId: orphan.rawMessageId,
       });
       return "created_cleared";
     }
@@ -246,6 +254,7 @@ export class MatchingEngine {
         clearTime: at,
         clearType: "AUTO_SUPERSEDED",
         durationMin: durationMinutes(a.alarmTime, at),
+        clearMessageId: null,
       });
     }
   }
@@ -279,6 +288,7 @@ export class MatchingEngine {
         clearTime,
         clearType: "EMAIL",
         durationMin: durationMinutes(target.alarmTime, clearTime),
+        clearMessageId: msg.id,
       });
       return "cleared";
     }

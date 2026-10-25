@@ -447,6 +447,51 @@ Mobile: list + read-only table with the same filters.
       only; click the row to expand). Themes: every Tailwind colour is a CSS variable generated per
       theme in `tailwind.config.ts`; the sidebar stays dark in the light theme (data-theme="blue"
       on it). Integration tests share alarms_test — run them with `--no-file-parallelism`.)
+      (2026-10-24, user request: **Mail view** of /alarms and /cleared — `uiPrefs.alarms.view`
+      `table | mail`, switch in the page header; `components/alarm-mail.tsx`. Gmail-style card:
+      the real mail subject, label chips ALM/CLR (from status), office, GEN, NDLN, VIP, BAT / NO BAT,
+      then the mail's other Gmail labels; age (active) or duration (cleared) top-right; Cell and
+      Device; "Received HH:mm (n min ago)" (+ Alarm mail / Clear mail times when cleared); green
+      call button bottom-right (`tel:`, several numbers → pick list). A flag shows when Site
+      Master says so OR the mail has the label (`packages/core/src/siteFlags.ts`): GEN = power
+      source contains "DG"; **nodal = any nodality except "1+0"** (also used by the Nodality icon).
+      `alarms.rawMessageId` / `clearMessageId` (migration `20261024000000_alarm_mail_links`,
+      backfilled by CONSEC_NBR) link an alarm to its alarm mail / Clear mail; set by the engine.)
+      (2026-10-24, user request: **/site-master page** in the main sidebar, every user, office-scoped
+      list (`GET /api/site-master?q&office&vip&nodal&generator&battery&siteType&page`, q = code /
+      name / phone / location; `meta.canManage`). Admins: "Add site" window (`POST /api/site-master`),
+      Edit window (PUT), Delete (`DELETE /api/site-master/:code`), "Import Excel" window + template
+      (`GET /api/site-master/template`). Office admin (ADMIN) manages only sites whose Site Master
+      office matches their office label (others 404 / 403; import skips them); super admin all.
+      2026-10-25 redesign (user request): the list shows only Code (copy icon), Site name, Office,
+      Flags + a "Details" button → `SiteDetailsDialog` (`components/site-master/dialogs.tsx`) with
+      every field and Copy (`siteWhatsAppText()`, `packages/core/src/siteMessage.ts`) / WhatsApp
+      (wa.me) for everyone, Edit / Delete for managers (after Edit → back to Details); location = address / "lat, long" / Maps
+      link (`site_master.location`, migration `20261024010000_site_location`). /settings/site-master
+      now holds only Value normalization.
+      **Import reads the network DB layout (DNTH DB):** sheet `Sites` (Site Code, SC Office,
+      Nodal Deg. N → "1+(N-1)", Cascade Type → siteType, VIP, Battaries Status), generator sheets
+      (`OR GEN Sites` Power Configuration, `Rental GEN` → "Rental GEN") patch powerSource, codes on
+      `Dismantle` are skipped. **Only the columns present in the file are written** (`columns` in
+      the parse result) — a file without phones keeps stored phones. Generator = power source with
+      DG / GEN / HGB; battery status is free text → `batteryState()` ok / weak / none / unknown.)
+      (2026-10-25, user request: **/alarms redesign.** Category tabs All / Down / Power / Other with
+      counts (`/api/alarms/active` returns `categories` = count per category with every other filter);
+      filter bar = Search (`q`: alarm name / site / site code / cell), Site tag (`flag` vip | nodal |
+      generator — Site Master or the mail's Gmail label, alarms.siteCode) and, only for a super
+      admin viewing all offices, Office (`office`, plus `offices` counts in the response; ignored
+      for office users). Region / Older-than are no longer in the UI (API still accepts them).
+      Table / Mail switch moved from the page headers to Settings → Display alarms, with per-user
+      mail-card parts `uiPrefs.alarms.mail` (`MAIL_PARTS`: tags, labels, age, cellDevice, phone,
+      category, received, raised; default = mail view with tags, labels, age, cell / device,
+      call button). **Site tags** `siteTags()` (`packages/core/src/siteFlags.ts`) are text only,
+      VIP · NODAL · BATT · GEN, shown only when the site has them (BATT = batteryState ok) — used
+      by the mail cards, the table "tags" option and the Site Master page. The office chip is gone
+      (office labels / nested "DN/…" labels never show). **Generator excludes another company's
+      power** (`otherOperatorPower()`: a VF / ET / WE word, also "ETDG", "DGVF"): "DG/VF", "ETDG",
+      "DG/ET" are not GEN — everywhere: tags, the alarms Site-tag filter and the Site Master
+      Generator filter (codes picked with hasGenerator(), not SQL LIKE). Smaller corners on
+      the alarm cards, tags and tabs.)
 - [x] REST API moved to NestJS (2026-10-21, user request, for React Native): see "NestJS API" below.
 - [ ] Phase 8 — full compose, backups, LAN access, 24h parallel run, RUNBOOK
       (RUNBOOK.md started with the hourly section; `apps/web/Dockerfile` exists but `web` is
