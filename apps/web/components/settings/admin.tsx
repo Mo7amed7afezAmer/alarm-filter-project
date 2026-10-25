@@ -449,8 +449,8 @@ export function OfficePicker() {
         <p className="text-sm text-muted-foreground">
           The worker reads the whole mailbox (inbox and every label). An alarm belongs to the Site
           Master office of its site code or, when the site is not in Site Master, to the office
-          label of its mail. Pick the office you want to look at; other users always see their own
-          office.
+          label of its mail. Pick the office — or a whole group (all DN or all DS offices) — you
+          want to look at; other users always see their own office.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -463,6 +463,7 @@ export function OfficePicker() {
             <option value={ALL}>All offices</option>
             {[...groups].map(([group, labels]) => (
               <optgroup key={group} label={group}>
+                {group !== "Other" && <option value={group}>All {group} offices</option>}
                 {labels.map((l) => (
                   <option key={l} value={l}>
                     {splitOffice(l).name}
@@ -472,7 +473,11 @@ export function OfficePicker() {
             ))}
           </select>
           <Button size="sm" onClick={() => void save()} disabled={busy || value === current}>
-            {busy ? "Switching…" : "Show this office"}
+            {busy
+              ? "Switching…"
+              : value !== ALL && !value.includes("/")
+                ? "Show these offices"
+                : "Show this office"}
           </Button>
         </div>
         {data && !data.offices.length && (
@@ -498,4 +503,3 @@ export function OfficePicker() {
     </Card>
   );
 }
-

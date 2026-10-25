@@ -19,7 +19,7 @@ import type { AuthUser } from "../common/auth.js";
 import { HttpError, pagination, parseBody, parseQuery, readForm } from "../common/http.js";
 import { CurrentUser, Roles } from "../common/nest.js";
 import { hourlyCache } from "../lib/hourly.js";
-import { getOffice, sameOffice } from "../lib/office.js";
+import { getOffice, sameOffice, siteOfficeMatcher } from "../lib/office.js";
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
@@ -116,9 +116,8 @@ function assertInScope(scope: string | null, siteOffice: string) {
 async function findSite(user: AuthUser, rawCode: string) {
   const code = rawCode.trim().toUpperCase();
   const site = await prisma.siteMaster.findUnique({ where: { code } });
-  const scope = await getOffice(user.id);
-  if (!site || (scope !== null && !sameOffice(site.office, scope)))
-    throw new HttpError(404, `Site ${code} not found`);
+  const inScope = await siteOfficeMatcher(await getOffice(user.id));
+  if (!site || !inScope(site.office)) throw new HttpError(404, `Site ${code} not found`);
   return site;
 }
 
@@ -143,13 +142,13 @@ export class SiteMasterController {
       listQuery,
     );
     const scope = await getOffice(user.id);
+    const officeInView = await siteOfficeMatcher(scope);
     const allOffices = await prisma.siteMaster.groupBy({
       by: ["office"],
       _count: { _all: true },
       orderBy: { office: "asc" },
     });
-    const offices =
-      scope === null ? allOffices : allOffices.filter((o) => sameOffice(o.office, scope));
+    const offices = scope === null ? allOffices : allOffices.filter((o) => officeInView(o.office));
     const inScope: Prisma.SiteMasterWhereInput =
       scope === null ? {} : { office: { in: offices.map((o) => o.office) } };
 

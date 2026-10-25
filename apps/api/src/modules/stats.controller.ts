@@ -118,7 +118,7 @@ export class StatsController {
     );
     const since = new Date(now.getTime() - (days + 1) * 86_400_000); // over-fetch, trimmed below
 
-    const { office, hiddenCategories, hiddenAlarmNames } = await alarmScopeSql(user.id);
+    const { allOffices, officeExact, officePrefix, admin, mine } = await alarmScopeSql(user.id);
     // alarmTime is stored as UTC timestamp without zone.
     const rows = await prisma.$queryRaw<{ day: string; category: string; count: number }[]>`
       SELECT to_char(("alarmTime" AT TIME ZONE 'UTC') AT TIME ZONE ${ALARM_TZ}, 'YYYY-MM-DD') AS day,
@@ -126,9 +126,11 @@ export class StatsController {
              count(*)::int AS count
       FROM alarms
       WHERE "alarmTime" >= ${since}
-        AND (${office}::text IS NULL OR office = ${office})
-        AND NOT (category::text = ANY(${hiddenCategories}::text[]))
-        AND NOT ("alarmName" = ANY(${hiddenAlarmNames}::text[]))
+        AND (${allOffices}::boolean OR office = ${officeExact}::text OR office LIKE ${officePrefix}::text)
+        AND (NOT (category::text = ANY(${admin.hiddenCategories}::text[]) OR "alarmName" = ANY(${admin.hiddenAlarmNames}::text[]))
+             OR "siteCode" = ANY(${admin.exceptSites}::text[]) OR upper(site) = ANY(${admin.exceptSites}::text[]))
+        AND (NOT (category::text = ANY(${mine.hiddenCategories}::text[]) OR "alarmName" = ANY(${mine.hiddenAlarmNames}::text[]))
+             OR "siteCode" = ANY(${mine.exceptSites}::text[]) OR upper(site) = ANY(${mine.exceptSites}::text[]))
       GROUP BY 1, 2`;
 
     const byDay = new Map(dayList.map((d) => [d, { day: d, DOWN: 0, POWER: 0, OTHER: 0 }]));

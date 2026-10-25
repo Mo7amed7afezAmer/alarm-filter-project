@@ -5,7 +5,7 @@
 // top-right, cell / device and a call button bottom-right. Which parts show is a per-user
 // setting (uiPrefs.alarms.mail, /settings/alarms/display).
 import { mailChips, siteTags, type ChipKind, type MailPart } from "@alarm/core";
-import { Mail, Phone, RadioTower, Server } from "lucide-react";
+import { ChevronDown, Mail, Phone, RadioTower, Server } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CATEGORY_STRIPE, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -339,6 +339,67 @@ function MailRow({
   );
 }
 
+/** Site key of the "group by site" setting: site code, else the full site name. */
+const siteKey = (a: MailAlarm) => a.siteCode ?? a.site;
+
+/** Alarms of one site folded into a card (gap accordion): site, tags, count, the newest
+ *  alarm's age; opens to the site's mail cards. */
+function SiteGroup<T extends MailAlarm>({
+  items,
+  age,
+  alert,
+  children,
+}: {
+  items: T[];
+  age: ReactNode;
+  alert?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const first = items[0]!;
+  const cats = [...new Set(items.map((a) => a.category))];
+  return (
+    <li
+      className={cn(
+        "rounded-md border border-l-4 border-slate-200 bg-white shadow-sm",
+        CATEGORY_STRIPE[first.category],
+        alert && !open && "bg-red-50/70",
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-start gap-3 p-3 text-left sm:p-4"
+      >
+        <ChevronDown
+          className={cn(
+            "mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform",
+            open && "rotate-180 text-brand",
+          )}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="break-all font-mono text-sm font-semibold text-slate-900">{first.site}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Chip className="bg-brand text-white">{items.length} alarms</Chip>
+            <SiteTags s={first} />
+            {cats.map((c) => (
+              <CategoryBadge key={c} value={c} />
+            ))}
+          </div>
+          {!open && (
+            <p className="mt-1.5 truncate text-xs text-slate-500">
+              {[...new Set(items.map((a) => a.alarmName))].join(" · ")}
+            </p>
+          )}
+        </div>
+        <div className="shrink-0">{age}</div>
+      </button>
+      {open && <ul className="space-y-2 border-t border-slate-100 p-2 sm:p-3">{children}</ul>}
+    </li>
+  );
+}
+
 export function AlarmMailList<T extends MailAlarm>({
   items,
   cleared = false,
@@ -362,20 +423,39 @@ export function AlarmMailList<T extends MailAlarm>({
   const { prefs } = useUiPrefs();
   if (loading) return <p className="py-10 text-center text-sm text-slate-500">Loading…</p>;
   if (!items.length) return <p className="py-10 text-center text-sm text-slate-500">{empty}</p>;
+  const row = (a: T) => (
+    <MailRow
+      key={a.id}
+      a={a}
+      cleared={cleared}
+      now={now}
+      timeZone={timeZone}
+      age={age(a)}
+      alert={alert?.(a)}
+      show={prefs.alarms.mail}
+    />
+  );
+  if (!prefs.alarms.mailGroupBySite) return <ul className="space-y-2">{items.map(row)}</ul>;
+
+  // one card per site code (current page, in the order the sites first appear)
+  const groups = new Map<string, T[]>();
+  for (const a of items) groups.set(siteKey(a), [...(groups.get(siteKey(a)) ?? []), a]);
   return (
     <ul className="space-y-2">
-      {items.map((a) => (
-        <MailRow
-          key={a.id}
-          a={a}
-          cleared={cleared}
-          now={now}
-          timeZone={timeZone}
-          age={age(a)}
-          alert={alert?.(a)}
-          show={prefs.alarms.mail}
-        />
-      ))}
+      {[...groups].map(([key, list]) =>
+        list.length === 1 ? (
+          row(list[0]!)
+        ) : (
+          <SiteGroup
+            key={`site:${key}`}
+            items={list}
+            age={age(list[0]!)}
+            alert={list.some((a) => alert?.(a))}
+          >
+            {list.map(row)}
+          </SiteGroup>
+        ),
+      )}
     </ul>
   );
 }

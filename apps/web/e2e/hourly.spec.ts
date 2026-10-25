@@ -26,9 +26,9 @@ test("process, filter and export an hourly report", async ({ page }) => {
   await expect(page).toHaveURL(/office=KAFR\+EL\+DAWAR/);
   const count = page.getByTestId("row-count");
   await expect(count).not.toContainText("Showing 2,285");
-  const offices = await page.locator("[data-testid=hourly-table] tbody tr[data-office]").evaluateAll((trs) =>
-    [...new Set(trs.map((t) => t.getAttribute("data-office")))],
-  );
+  const offices = await page
+    .locator("[data-testid=hourly-table] tbody tr[data-office]")
+    .evaluateAll((trs) => [...new Set(trs.map((t) => t.getAttribute("data-office")))]);
   expect(offices).toEqual(["KAFR EL DAWAR"]);
 
   // table as image (WhatsApp): PNG pages drawn from the filtered rows
@@ -40,9 +40,15 @@ test("process, filter and export an hourly report", async ({ page }) => {
   const shown = Number((await count.locator("b").first().innerText()).replace(/,/g, ""));
   expect(n).toBeGreaterThanOrEqual(Math.ceil(shown / 40));
   // one set of images per category, never mixed
-  const names = await dialog.locator("img").evaluateAll((els) => els.map((e) => e.getAttribute("alt")));
-  for (const name of names) expect(name).toMatch(/-(down|power|other)(-\d+of\d+)?\.png$/);
-  const size = await imgs.first().evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight]);
+  const names = await dialog
+    .locator("img")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("alt")));
+  // default image sets: Down, Down sites, Environmental
+  for (const name of names)
+    expect(name).toMatch(/-(down|down-sites|environmental)(-\d+of\d+)?\.png$/);
+  const size = await imgs
+    .first()
+    .evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight]);
   expect(size[0]).toBeGreaterThan(800);
   expect(size[1]).toBeGreaterThan(200);
   const [png] = await Promise.all([
@@ -52,16 +58,19 @@ test("process, filter and export an hourly report", async ({ page }) => {
   expect(png.suggestedFilename()).toMatch(/^hourly-.*\.png$/);
   await dialog.getByRole("button", { name: "Close" }).click();
 
-  // export downloads an xlsx with the same filter
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-excel").click()]);
-  expect(download.suggestedFilename()).toMatch(/^hourly-alarms-.*\.xlsx$/);
-  const file = await download.path();
+  // the export API returns an xlsx with the same filter (the page itself no longer has the button)
+  const at = new URL(page.url());
+  const gmailId = at.pathname.split("/").pop()!;
+  const xlsx = await page.request.get(`/api/hourly-reports/${gmailId}/export${at.search}`);
+  expect(xlsx.ok()).toBe(true);
+  expect(xlsx.headers()["content-disposition"]).toMatch(/filename="hourly-alarms-.*\.xlsx"/);
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.readFile(file!);
+  await wb.xlsx.load((await xlsx.body()) as unknown as ArrayBuffer);
   const ws = wb.worksheets[0]!;
   const header = (ws.getRow(1).values as unknown[]).slice(1);
   expect(header).toContain("Office");
   const officeCol = header.indexOf("Office") + 1;
   expect(ws.rowCount).toBeGreaterThan(1);
-  for (let i = 2; i <= ws.rowCount; i++) expect(ws.getRow(i).getCell(officeCol).value).toBe("KAFR EL DAWAR");
+  for (let i = 2; i <= ws.rowCount; i++)
+    expect(ws.getRow(i).getCell(officeCol).value).toBe("KAFR EL DAWAR");
 });

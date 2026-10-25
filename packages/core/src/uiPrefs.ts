@@ -75,6 +75,8 @@ export interface UiPrefs {
     siteInfoIcons: boolean;
     /** Rows with the same site code are shown once; clicking the row expands the others. */
     groupBySite: boolean;
+    /** Mail view: alarms of the same site code fold into one card that opens (accordion). */
+    mailGroupBySite: boolean;
     /** Column ids hidden per table (required columns are never hidden). */
     hiddenColumns: Record<AlarmTable, string[]>;
     /** Mail view: which parts of a card are shown. */
@@ -90,6 +92,7 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
     view: "mail",
     siteInfoIcons: false,
     groupBySite: false,
+    mailGroupBySite: false,
     hiddenColumns: { active: [], cleared: [] },
     // Like the Gmail list, plus age, cell / device and the call button (user, 2026-10-25).
     mail: {
@@ -121,6 +124,7 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
       view: ALARM_VIEWS.includes(a.view as AlarmView) ? (a.view as AlarmView) : d.view,
       siteInfoIcons: bool(a.siteInfoIcons, d.siteInfoIcons),
       groupBySite: bool(a.groupBySite, d.groupBySite),
+      mailGroupBySite: bool(a.mailGroupBySite, d.mailGroupBySite),
       hiddenColumns: Object.fromEntries(
         ALARM_TABLES.map((t) => {
           const allowed = new Set(ALARM_COLUMNS[t].filter((c) => !c.required).map((c) => c.id));

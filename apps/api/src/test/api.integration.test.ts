@@ -333,6 +333,49 @@ describe.skipIf(!url)("API integration", () => {
       expect(r3.body.items.map((a: { site: string }) => a.site)).toEqual([`${PREFIX}-B`]);
     });
 
+    it("hidden types still show at the exception sites (admin and personal filters each)", async () => {
+      as("VIEWER");
+      const sites = (body: { items: { site: string }[] }) => body.items.map((a) => a.site).sort();
+      const path = `/api/alarms/active?site=${PREFIX}`;
+      // admin hides DOWN except at site A (full site name)
+      await prisma.systemStatus.update({
+        where: { id: 1 },
+        data: {
+          displayFilter: { hiddenCategories: ["DOWN"], hiddenAlarmNames: [], exceptSites: [`${PREFIX}-A`] },
+        },
+      });
+      expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`, `${PREFIX}-B`]);
+      // the daily chart (raw SQL) applies the same rule: no error, A still counted
+      expect((await get("/api/stats/daily?days=2")).status).toBe(200);
+
+      // the user hides POWER for themselves, with no exception → B goes; the admin's
+      // exception for A does not lift the user's own filter (and the other way round)
+      await prisma.user.update({
+        where: { id: Number(users.VIEWER) },
+        data: { displayPrefs: { hiddenCategories: ["POWER"], hiddenAlarmNames: [], exceptSites: [] } },
+      });
+      try {
+        expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`]);
+        // PUT /api/me/display stores the exceptions (upper-cased)
+        const put = await api.call("/api/me/display", {
+          method: "PUT",
+          json: { hiddenCategories: ["POWER"], hiddenAlarmNames: [], exceptSites: [`${PREFIX.toLowerCase()}-b`] },
+        });
+        expect(put.status).toBe(200);
+        expect(put.body.exceptSites).toEqual([`${PREFIX}-B`]);
+        expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`, `${PREFIX}-B`]);
+      } finally {
+        await prisma.user.update({
+          where: { id: Number(users.VIEWER) },
+          data: { displayPrefs: { hiddenCategories: [], hiddenAlarmNames: [] } },
+        });
+        await prisma.systemStatus.update({
+          where: { id: 1 },
+          data: { displayFilter: { hiddenCategories: [], hiddenAlarmNames: [] } },
+        });
+      }
+    });
+
     it("summary counts exclude hidden types", async () => {
       as("VIEWER");
       await prisma.systemStatus.update({
@@ -425,6 +468,31 @@ describe.skipIf(!url)("API integration", () => {
           data: { office: null },
         });
         await prisma.user.deleteMany({ where: { id: { in: [other.id, none.id] } } });
+      }
+    });
+
+    it("the super admin can view a whole office group (every ZZ/… office)", async () => {
+      const path = `/api/alarms/active?site=${PREFIX}`;
+      as("SUPER_ADMIN");
+      const setView = (office: string | null) =>
+        prisma.user.update({ where: { id: Number(users.SUPER_ADMIN) }, data: { office } });
+      try {
+        await setView("ZZ");
+        const zz = await get(path);
+        expect(zz.body.total).toBe(2);
+        // the office filter is offered inside the group, and limited to it
+        expect(zz.body.offices).toEqual([{ office: OFFICE, count: 2 }]);
+        expect((await get(`${path}&office=${encodeURIComponent(OFFICE)}`)).body.total).toBe(2);
+        expect((await get(`${path}&office=ZZ%2FOther`)).body.total).toBe(0);
+        expect((await get(`${path}&office=YY%2FOther`)).body.total).toBe(2); // outside the group: ignored
+        // stats (Prisma and raw SQL) follow the same scope
+        expect((await get("/api/stats/summary")).status).toBe(200);
+        const daily = await get("/api/stats/daily?days=2");
+        expect(daily.status).toBe(200);
+        await setView("ZY");
+        expect((await get(path)).body.total).toBe(0);
+      } finally {
+        await setView(null);
       }
     });
   });

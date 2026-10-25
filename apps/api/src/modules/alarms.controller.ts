@@ -3,6 +3,7 @@ import { Controller, Get, Req, Res } from "@nestjs/common";
 import ExcelJS from "exceljs";
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { isOfficeGroup } from "@alarm/core";
 import { prisma } from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { ALARM_TZ, HttpError, paged, parseQuery, searchParams } from "../common/http.js";
@@ -38,7 +39,9 @@ export class AlarmsController {
   async active(@Req() req: Request, @CurrentUser() user: AuthUser) {
     const q = parseQuery(req, activeQuery);
     const where = await activeWhere(q, user.id);
-    const allOffices = (await getOffice(user.id)) === null;
+    // the office filter: a super admin looking at all offices or at an office group
+    const scope = await getOffice(user.id);
+    const allOffices = scope === null || isOfficeGroup(scope);
     const [total, rows, byCategory, byOffice] = await Promise.all([
       prisma.alarm.count({ where }),
       prisma.alarm.findMany({

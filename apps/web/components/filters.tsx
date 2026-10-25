@@ -62,11 +62,13 @@ export function TextFilter({
   value,
   placeholder,
   onChange,
+  inputClassName,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   onChange: (v: string | null) => void;
+  inputClassName?: string;
 }) {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
@@ -78,7 +80,7 @@ export function TextFilter({
   return (
     <Field label={label}>
       <Input
-        className="w-full bg-white sm:w-56"
+        className={cn("w-full bg-white sm:w-56", inputClassName)}
         value={text}
         placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}

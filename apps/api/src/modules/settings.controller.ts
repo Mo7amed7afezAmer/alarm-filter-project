@@ -2,7 +2,7 @@
 import { Controller, Get, HttpCode, Post, Put, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { z } from "zod";
-import { classify } from "@alarm/core";
+import { classify, officeGroups } from "@alarm/core";
 import { prisma, type Prisma } from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { category, HttpError, parseBody, parseQuery } from "../common/http.js";
@@ -27,6 +27,8 @@ const reprocessQuery = z.object({ days: z.coerce.number().int().min(1).max(90).d
 const displayBody = z.object({
   hiddenCategories: z.array(category).max(3),
   hiddenAlarmNames: z.array(z.string().trim().min(1).max(200)).max(1000),
+  /** Site codes / full site names where the hidden types still show. */
+  exceptSites: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
 });
 
 async function listRules() {
@@ -114,7 +116,8 @@ export class SettingsController {
     };
   }
 
-  /** Super admin: switch the office being viewed (their account only); null/"" = all offices.
+  /** Super admin: switch the office being viewed (their account only): an office label, an
+   *  office group ("DN"), or null/"" = all offices.
    *  Office users are fixed to their own office. */
   @Put("settings/office")
   @Roles("SUPER_ADMIN")
@@ -123,8 +126,14 @@ export class SettingsController {
       req,
       z.object({ office: z.string().trim().max(200).nullable() }),
     );
+    // an office label, or an office group ("DN" = every DN/… office)
     const offices = await availableOffices();
-    if (office && offices.length && !offices.includes(office)) {
+    if (
+      office &&
+      offices.length &&
+      !offices.includes(office) &&
+      !officeGroups(offices).includes(office)
+    ) {
       throw new HttpError(400, `Unknown office label "${office}"`);
     }
     await prisma.user.update({ where: { id: user.id }, data: { office: office || null } });

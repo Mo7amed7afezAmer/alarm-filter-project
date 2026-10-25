@@ -1,6 +1,6 @@
 // Hourly reports (§14, stateless): list from Gmail, process into the in-process cache, read rows,
 // export, compare. Plus the normalization rules applied while processing.
-import { Controller, Get, Param, Post, Put, Req, Res } from "@nestjs/common";
+import { Controller, Get, HttpCode, Param, Post, Put, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import {
@@ -25,11 +25,14 @@ import { CurrentUser, Roles } from "../common/nest.js";
 import { hourlySource } from "../lib/gmail.js";
 import {
   checkGmailId,
+  collectState,
+  COLLECT_REPORTS,
   getReport,
   hourlyCache,
   parseColumns,
   parseFilters,
   scopeRows,
+  startCollect,
   startProcessing,
 } from "../lib/hourly.js";
 
@@ -136,7 +139,10 @@ export class HourlyController {
   ) {
     const id = checkGmailId(gmailId);
     const sp = searchParams(req);
-    const p = paging.safeParse({ page: sp.get("page") ?? undefined, limit: sp.get("limit") ?? undefined });
+    const p = paging.safeParse({
+      page: sp.get("page") ?? undefined,
+      limit: sp.get("limit") ?? undefined,
+    });
     if (!p.success) throw new HttpError(400, "Invalid query", p.error.flatten().fieldErrors);
     const filters = parseFilters(sp);
     const sort = parseHourlySort(sp.get("sort"));
@@ -202,6 +208,24 @@ export class HourlyController {
       .end(Buffer.from(buf));
   }
 
+  /** Alarm names seen in processed reports (Settings → Hourly reports hide lists), plus the
+   *  state of the "collect from old reports" job. Any signed-in user. */
+  @Get("hourly-alarm-names")
+  async alarmNames() {
+    const data = await prisma.hourlyAlarmName.findMany({
+      orderBy: [{ section: "asc" }, { name: "asc" }],
+    });
+    return { data, meta: { collect: collectState(), collectReports: COLLECT_REPORTS } };
+  }
+
+  /** Reads the newest reports in the background and saves their alarm names (202). */
+  @Post("hourly-alarm-names/collect")
+  @Roles("OPERATOR")
+  @HttpCode(202)
+  collectAlarmNames() {
+    return { meta: { collect: startCollect(), collectReports: COLLECT_REPORTS } };
+  }
+
   /** Value fixes applied to hourly reports (§14). */
   @Get("hourly-normalizations")
   @Roles("SUPER_ADMIN")
@@ -215,7 +239,9 @@ export class HourlyController {
   async putNormalizations(@Req() req: Request) {
     const rules = await parseBody(req, z.array(normalizationRule).max(500));
     // (field, from) is unique — keep the last occurrence
-    const unique = [...new Map(rules.map((r) => [`${r.field}\u0000${r.from.toUpperCase()}`, r])).values()];
+    const unique = [
+      ...new Map(rules.map((r) => [`${r.field}\u0000${r.from.toUpperCase()}`, r])).values(),
+    ];
     await prisma.$transaction([
       prisma.hourlyNormalization.deleteMany(),
       prisma.hourlyNormalization.createMany({ data: unique }),

@@ -73,7 +73,7 @@ export function MultiSelect({
         aria-haspopup="listbox"
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-white px-3 text-left text-sm shadow-sm",
+          "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-input bg-white px-2.5 text-left text-sm shadow-sm",
           value.length ? "text-slate-900" : "text-slate-500",
         )}
       >

@@ -7,8 +7,8 @@ export interface AppConfig {
   alertHours: number;
   role: "VIEWER" | "OPERATOR" | "ADMIN" | "SUPER_ADMIN";
   email: string;
-  /** Office whose data the pages show, e.g. "DN/Kafr ElDawar"; null = all offices (super
-   *  admin); "" = none (account without an office). */
+  /** Office whose data the pages show, e.g. "DN/Kafr ElDawar", or a whole group "DN" (super
+   *  admin); null = all offices (super admin); "" = none (account without an office). */
   office: string | null;
   /** users.office: the account's office (super admin: the office being viewed). */
   homeOffice: string | null;

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CategoryBadge } from "@/components/badges";
 import { SectionHeader, Toggle } from "@/components/settings/section";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { usePoll } from "@/components/use-poll";
@@ -131,14 +132,9 @@ export default function NotificationSettings() {
         {summary}
       </div>
       {msg && (
-        <p
-          className={cn(
-            "rounded-md px-3 py-2 text-sm",
-            msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700",
-          )}
-        >
+        <Notice tone={msg.ok ? "success" : "error"} onClose={() => setMsg(null)}>
           {msg.text}
-        </p>
+        </Notice>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">

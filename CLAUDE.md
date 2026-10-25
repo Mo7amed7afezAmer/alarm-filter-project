@@ -409,6 +409,39 @@ Mobile: list + read-only table with the same filters.
   (default: each category, so Excel now has DOWN/POWER/OTHER sheets). New output-only columns
   `siteNo` ("Site #": 1, 2, … per distinct site code, last = number of sites) and `siteAlarms`
   (rows of that code), numbered per group by `numberSites()`; images/PDF/footer show "N sites".
+- **Hourly settings redesign (2026-10-25, user request):** /settings/hourly ("Alarms, images &
+  colours") — sections Alarms / Columns / Images / Sort / Colours are a gap accordion (separate
+  collapsible cards, header = title + one-line summary of the current setting, several open at
+  once, Alarms open by default; `Section` in the page) — no preview, ONE column list (`tableColumns`) for the table, images and Excel
+  (`imageColumns` dropped). Prefs shape (`packages/core/src/hourly/output.ts`, old settings
+  converted by `normalizeHourlyPrefs`): `sort` time | code (was `sortBySite`); `colors` = {enabled,
+  rules: age {hours} | office {office}, each with colour + columns ([] = whole row)} (was
+  `ageColors`) — **an office rule wins over age** (user choice), highest age period wins, else the
+  built-in office colour; `images` = sets down / downSites / env / envVipNodal / power, each
+  {enabled, byOffice} (byOffice only for down, env, envVipNodal) → `hourlyImageGroups()`: Down;
+  Down sites = DOWN, all offices, first alarm per site code (siteAlarms keeps the site's count);
+  Environmental = POWER + OTHER; Env · VIP / Nodal (separate image, user choice); Power only.
+  Default: Down + Down sites + Environmental. `split` stays for the Excel API only. Alarm hide
+  lists = **Down** and **Environmental** from table `hourly_alarm_names` (migration
+  `20261025000000_hourly_alarm_names`: name, section DOWN|ENV, category, lastCount, lastSeen),
+  filled on every processing (`recordAlarmNames`) and by "Collect from the last 24 reports"
+  (`POST /api/hourly-alarm-names/collect`, operator+, background, cached reports not re-downloaded;
+  `GET /api/hourly-alarm-names` for everyone). First real run: 24 reports, 2 without a report
+  file, 19 Down + 125 Environmental names. `alarmTexts` (migration
+  `20261025010000_hourly_alarm_texts`, union of the Alarm Text values seen with the name) lets the
+  settings search find Environmental alarms by their wrapper text "BASE STATION EXTERNAL ALARM
+  NOTIFICATION" (120 names), shown as "Alarm Text: …" under each match.
+- **Report page trimmed (2026-10-25, user request):** /hourly/[gmailId] header keeps only "Export
+  image" (was "Image for WhatsApp") and "Compare with previous" — Copy as table, PDF and Export
+  Excel buttons removed from the page (the export API, `copyRows` and `TablePdfButton` remain).
+  Columns chooser sits in the filter bar; Region filter removed from the UI; Office filter only
+  for the super admin. Sidebar narrowed to w-52 (208 px). Compact filter box: sheet tabs row
+  (hidden scrollbar) with Clear + Columns on its right, then an even grid of h-8 controls
+  (2 / 3 / 4 / 8 columns by width) — Search, Office, Alarm, Site type, Category, VIP, and one
+  "Alarm time" field holding from–to. Header order: Compare with previous, then Export image
+  in the brand colour. No "All reports" link (the sidebar has Hourly Alarms). A "Filters" button
+  (count of active filters) folds the filter grid away; open/folded is remembered per browser
+  (localStorage `hourly.filtersOpen`).
 - Fixture counts (tests/fixtures/NSN Update_Output.rar, 13-OCT-2026 ~07:00): data rows
   2G_Down 529, 3G_Down 434, 4G_Down 438, 5G_Down 2, Environmental 1394, HW 35; 856 unique
   Down rows after dedupe (181 SYNCHRONIZATION rows merged across 2G/3G/4G); 2,285 rows total.
@@ -436,11 +469,19 @@ Mobile: list + read-only table with the same filters.
       700–900 = light text, `brand` (teal) = primary/selected. Dark only, no light toggle.
       Sidebar = `components/nav.tsx` (fixed w-64 on md+, drawer + top bar below md).)
       (2026-10-22, user request: settings redesign. Settings is for EVERY user now, with its own
-      section sidebar (`app/(app)/settings/layout.tsx`, routes /settings/general | notifications |
+      sections — since 2026-10-25 a tab row along the top (underline tabs, thin dividers between
+      the groups, scrolls sideways on narrow screens with the current tab kept in view, icons only
+      on 2xl) instead of the left section sidebar (`app/(app)/settings/layout.tsx`, routes /settings/general | notifications |
       alarms/display | alarms/classification | hourly | users | gmail | site-master,
       shown by role). /preferences and /notifications redirect to /settings/notifications.
       2026-10-25: Office view + Reprocess are cards on /settings/general (super admin only, under
-      the Theme); /settings/office and /settings/reprocess redirect there.
+      the Theme); /settings/office and /settings/reprocess redirect there. The super admin can also
+      view a whole **office group** ("All DN offices" / "All DS offices" → users.office = "DN"):
+      a scope without "/" is a group (`isOfficeGroup`, `officeInScope`, `officeGroups` in
+      `packages/core/src/roles.ts`); `officeWhere()` = `office startsWith "DN/"`, raw SQL via
+      `alarmScopeSql()` {allOffices, officeExact, officePrefix}, Site Master / hourly rows via
+      `siteOfficeMatcher()` (match keys of the group's labels). In a group view /alarms offers the
+      Office filter limited to that group; the sidebar pill shows "DN · All offices".
       Per-user UI settings in `users.uiPrefs` (migration `20261022000000_user_ui_prefs`,
       `packages/core/src/uiPrefs.ts`, GET|PUT `/api/me/ui-prefs`, auto-saved by
       `components/ui-prefs.tsx`): theme `blue` (the navy default) | `dark` | `light`, rendered as
@@ -579,6 +620,19 @@ Notes:
   admin + personal; all routes pass `Number(session.user.id)`. Personal hiding also filters
   that user's notification feed. Admin-hidden types show as locked in the personal editor
   (shared component `components/types-visibility-editor.tsx`, mode admin|personal).
+- **Site exceptions for hidden types (2026-10-25, user request):** both filters (admin and
+  personal) have `exceptSites` (upper-case site codes or full site names, ≤ 200): the hidden types
+  still show at those sites (`displayHides()` in `packages/core/src/displayFilter.ts`). The two
+  filters are no longer merged — `alarmScope()` ANDs one condition per filter: NOT (hidden
+  category / name) OR siteCode ∈ exceptSites OR site ∈ exceptSites; the daily chart's raw SQL
+  (`alarmScopeSql()` → `admin`, `mine`) does the same with `upper(site)`. Edited under "Except
+  these sites" in each hide/show section of Settings → Display alarms.
+- **Display alarms page (2026-10-25):** a gap accordion (`components/settings/accordion.tsx`
+  `AccordionSection`, shared with the hourly settings): View · Mail cards · Table site details ·
+  Table rows · Table columns · my hidden types · hidden for everyone. Mail cards has its own
+  section with **"Group alarms of the same site"** (`uiPrefs.alarms.mailGroupBySite`): on the
+  current page, alarms with the same site code (else site) fold into one card — site, tags,
+  "N alarms", categories, the alarm names, newest age — that opens to their mail cards.
 - After a schema change, RESTART `next dev` — a running dev server keeps the old Prisma client
   in memory ("Unknown field … on model SystemStatus").
 - On Windows, `prisma generate` fails with EPERM while `next dev` holds the query-engine DLL —

@@ -19,6 +19,7 @@ import { useAppConfig } from "@/components/app-config";
 import { api } from "@/components/hourly/client";
 import { SectionHeader } from "@/components/settings/section";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateTime } from "@/lib/format";
@@ -173,15 +174,9 @@ function GmailView() {
       />
 
       {msg && (
-        <p
-          role="status"
-          className={cn(
-            "rounded-md px-3 py-2 text-sm",
-            msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700",
-          )}
-        >
+        <Notice tone={msg.ok ? "success" : "error"} onClose={() => setMsg(null)}>
           {msg.text}
-        </p>
+        </Notice>
       )}
 
       <Card className="rounded-xl border-slate-200 shadow-sm">

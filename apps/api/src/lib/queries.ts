@@ -1,5 +1,12 @@
 // Alarm list queries shared by /api/alarms/* and /api/export.
-import { hasGenerator, isNodal, otherOperatorPower, siteCodeOf } from "@alarm/core";
+import {
+  hasGenerator,
+  isNodal,
+  isOfficeGroup,
+  officeInScope,
+  otherOperatorPower,
+  siteCodeOf,
+} from "@alarm/core";
 import { prisma, type Prisma } from "@alarm/db";
 import { z } from "zod";
 import { category, dateParam, pagination } from "../common/http.js";
@@ -15,7 +22,8 @@ export const activeQuery = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   /** Sites with this tag (Site Master or the mail's Gmail label, like the mail-view tags). */
   flag: z.enum(SITE_FLAGS).optional(),
-  /** Super admin viewing all offices: one office. Ignored for office-scoped users. */
+  /** Super admin viewing all offices or an office group: one office (of that group). Ignored
+   *  for office-scoped users. */
   office: z.string().trim().min(1).max(100).optional(),
   site: z.string().trim().min(1).max(200).optional(),
   region: z.string().trim().min(1).max(100).optional(),
@@ -85,7 +93,11 @@ export async function activeWhere(
       })),
     });
   if (q.flag) and.push(await siteFlagWhere(q.flag));
-  if (q.office && (await getOffice(userId)) === null) and.push({ office: q.office });
+  if (q.office) {
+    const scope = await getOffice(userId);
+    if (scope === null || (isOfficeGroup(scope) && officeInScope(q.office, scope)))
+      and.push({ office: q.office });
+  }
   if (q.minHours !== undefined)
     and.push({ alarmTime: { lte: new Date(now.getTime() - q.minHours * 3_600_000) } });
   return { AND: and };

@@ -3,6 +3,7 @@
 // Active alarms: category tabs (All / Down / Power / Other, with counts), then search, a site-tag
 // filter and — for a super admin viewing all offices — an office filter. Table or Mail view and
 // the mail card parts are set in Settings → Display alarms.
+import { isOfficeGroup } from "@alarm/core";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Download, RefreshCw } from "lucide-react";
 import { Suspense, useMemo } from "react";
@@ -121,8 +122,8 @@ function AlarmsView() {
   const { prefs } = useUiPrefs();
   const display = prefs.alarms;
   const icons = display.siteInfoIcons;
-  // Office filter only for a super admin looking at every office.
-  const pickOffice = role === "SUPER_ADMIN" && viewOffice === null;
+  // Office filter only for a super admin looking at every office or a whole group (DN / DS).
+  const pickOffice = role === "SUPER_ADMIN" && (viewOffice === null || isOfficeGroup(viewOffice));
   const f = (k: string) => params.get(k) ?? "";
   const category = f("category");
   const page = Number(params.get("page") ?? 1);

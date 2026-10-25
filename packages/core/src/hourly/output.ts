@@ -1,13 +1,13 @@
-// Hourly report output settings (users.uiPrefs.hourly): which rows and columns the table, the
-// WhatsApp images, the Excel export and the PDF show, how rows are sorted, coloured by alarm
-// age and split into groups (category / office). Browser-safe — the web pages and the API's
-// Excel export share it, so every output looks the same.
+// Hourly report output settings (users.uiPrefs.hourly): which rows and columns the table and the
+// images show, how rows are sorted, how cells are coloured (by alarm age or office) and which
+// image sets "Export image" makes. Browser-safe — the web pages and the API's Excel export share
+// it, so every output looks the same.
 
 import type { Category } from "../index.js";
+import { isNodal } from "../siteFlags.js";
 import { HOURLY_SORT_BY_SITE, HOURLY_DEFAULT_SORT, type HourlySort } from "./filter.js";
 import {
   HOURLY_COLUMN_KEYS,
-  HOURLY_COMPACT_COLUMNS,
   HOURLY_DEFAULT_COLUMNS,
   HOURLY_SHEETS,
   officeColor,
@@ -25,15 +25,36 @@ const CATS: readonly Category[] = ["DOWN", "POWER", "OTHER"];
 export const HOURLY_SPLIT_MODES = ["none", "downVsRest", "category"] as const;
 export type HourlySplitMode = (typeof HOURLY_SPLIT_MODES)[number];
 
-/** Age colouring paints the whole row, or only the chosen columns. */
-export const HOURLY_AGE_TARGETS = ["row", "columns"] as const;
-export type HourlyAgeTarget = (typeof HOURLY_AGE_TARGETS)[number];
+/**
+ * A colour rule: rows older than `hours` (report time − alarm time), or rows of `office`, get
+ * `color` ("RRGGBB", no '#') in the chosen `columns` — empty = the whole row. When an office rule
+ * and an age rule both match a cell, the office rule wins (user, 2026-10-25); among age rules the
+ * highest period reached wins.
+ */
+export type HourlyColorRule =
+  | { kind: "age"; hours: number; color: string; columns: HourlyColumnKey[] }
+  | { kind: "office"; office: string; color: string; columns: HourlyColumnKey[] };
 
-/** Rows older than `hours` (report time − alarm time) get `color` ("RRGGBB", no '#'). */
-export interface HourlyAgeRule {
-  hours: number;
-  color: string;
-}
+/** Default sort: newest alarm first, or by site code (a site's alarms sit together). */
+export const HOURLY_SORT_CHOICES = ["time", "code"] as const;
+export type HourlySortChoice = (typeof HOURLY_SORT_CHOICES)[number];
+
+/**
+ * Image sets made by "Export image" (each on / off in the settings):
+ * down — DOWN alarms (all offices in one set, or one per office);
+ * downSites — DOWN, all offices, one row per site code: how many sites are down;
+ * env — Environmental = POWER + OTHER (all offices together, or one per office);
+ * envVipNodal — Environmental, VIP or Nodal sites only;
+ * power — POWER alarms only.
+ */
+export const HOURLY_IMAGE_SETS = ["down", "downSites", "env", "envVipNodal", "power"] as const;
+export type HourlyImageSet = (typeof HOURLY_IMAGE_SETS)[number];
+/** Sets that can be split per office. */
+export const HOURLY_IMAGE_SETS_BY_OFFICE: readonly HourlyImageSet[] = [
+  "down",
+  "env",
+  "envVipNodal",
+];
 
 export const HOURLY_ROWS_PER_IMAGE = [25, 40, 60, 100] as const;
 
@@ -43,21 +64,12 @@ export interface HourlyPrefs {
   hiddenCategories: Category[];
   /** Exact alarmName values, upper-case. */
   hiddenAlarms: string[];
-  /** Visible columns in order: table, Excel and PDF. */
+  /** Visible columns in order: the table, the images and the Excel export. */
   tableColumns: HourlyColumnKey[];
-  /** Visible columns in order: WhatsApp images. */
-  imageColumns: HourlyColumnKey[];
-  /** Default sort office → site code → newest alarm, so a site's alarms sit together. */
-  sortBySite: boolean;
-  ageColors: {
-    enabled: boolean;
-    /** Ascending by hours; the highest rule the age reaches wins. */
-    rules: HourlyAgeRule[];
-    target: HourlyAgeTarget;
-    /** Columns painted when target = "columns". */
-    columns: HourlyColumnKey[];
-  };
-  /** Groups of the images, Excel sheets and PDF sections. */
+  sort: HourlySortChoice;
+  colors: { enabled: boolean; rules: HourlyColorRule[] };
+  images: Record<HourlyImageSet, { enabled: boolean; byOffice: boolean }>;
+  /** Groups of the Excel sheets (API export; not shown in the settings). */
   split: { mode: HourlySplitMode; byOffice: boolean };
   imageRowsPerPage: number;
 }
@@ -67,25 +79,29 @@ export const DEFAULT_HOURLY_PREFS: HourlyPrefs = {
   hiddenCategories: [],
   hiddenAlarms: [],
   tableColumns: HOURLY_DEFAULT_COLUMNS,
-  imageColumns: HOURLY_COMPACT_COLUMNS,
-  sortBySite: false,
-  ageColors: {
-    enabled: true,
-    rules: [{ hours: 3, color: "FCA5A5" }],
-    target: "row",
-    columns: ["alarmTime"],
+  sort: "time",
+  colors: { enabled: true, rules: [{ kind: "age", hours: 3, color: "FCA5A5", columns: [] }] },
+  images: {
+    down: { enabled: true, byOffice: false },
+    downSites: { enabled: true, byOffice: false },
+    env: { enabled: true, byOffice: false },
+    envVipNodal: { enabled: false, byOffice: false },
+    power: { enabled: false, byOffice: false },
   },
   split: { mode: "category", byOffice: false },
   imageRowsPerPage: 40,
 };
 
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const strings = (v: unknown) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
 /** Known keys only, no duplicates, order kept; empty → `fallback`. */
 function columnList(v: unknown, fallback: HourlyColumnKey[]): HourlyColumnKey[] {
   const keys = [
-    ...new Set(strings(v).filter((k): k is HourlyColumnKey => (HOURLY_COLUMN_KEYS as string[]).includes(k))),
+    ...new Set(
+      strings(v).filter((k): k is HourlyColumnKey => (HOURLY_COLUMN_KEYS as string[]).includes(k)),
+    ),
   ];
   return keys.length ? keys : fallback;
 }
@@ -97,20 +113,61 @@ export function hexColor(v: unknown): string | null {
   return /^[0-9A-F]{6}$/.test(s) ? s : null;
 }
 
+/** Known keys only, no duplicates, order kept; may be empty. */
+const columnSubset = (v: unknown): HourlyColumnKey[] => [
+  ...new Set(
+    strings(v).filter((k): k is HourlyColumnKey => (HOURLY_COLUMN_KEYS as string[]).includes(k)),
+  ),
+];
+
+/** One stored rule → a valid rule, or null. */
+function colorRule(v: unknown): HourlyColorRule | null {
+  const x = obj(v);
+  const color = hexColor(x.color);
+  if (!color) return null;
+  const columns = columnSubset(x.columns);
+  if (x.kind === "office") {
+    const office = typeof x.office === "string" ? x.office.trim().toUpperCase() : "";
+    return office ? { kind: "office", office, color, columns } : null;
+  }
+  const hours = Number(x.hours);
+  return Number.isFinite(hours) && hours > 0 && hours <= 720
+    ? { kind: "age", hours: Math.round(hours * 4) / 4, color, columns }
+    : null;
+}
+
+/** Colour rules, also from the older `ageColors` shape (2026-10-22: periods + row / columns). */
+function colorRules(r: Record<string, unknown>): HourlyPrefs["colors"] {
+  const d = DEFAULT_HOURLY_PREFS.colors;
+  const c = obj(r.colors);
+  if (Array.isArray(c.rules))
+    return {
+      enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
+      rules: c.rules
+        .map(colorRule)
+        .filter((x): x is HourlyColorRule => !!x)
+        .slice(0, 30),
+    };
+  const age = obj(r.ageColors);
+  if (!Array.isArray(age.rules)) return d;
+  const columns = age.target === "columns" ? columnSubset(age.columns) : [];
+  return {
+    enabled: typeof age.enabled === "boolean" ? age.enabled : d.enabled,
+    rules: age.rules
+      .map((x) => colorRule({ ...obj(x), kind: "age", columns }))
+      .filter((x): x is HourlyColorRule => !!x)
+      .slice(0, 30),
+  };
+}
+
 /** Any stored / submitted value → complete, valid HourlyPrefs. */
 export function normalizeHourlyPrefs(raw: unknown): HourlyPrefs {
   const r = obj(raw);
   const d = DEFAULT_HOURLY_PREFS;
-  const age = obj(r.ageColors);
   const split = obj(r.split);
-  const rawRules = Array.isArray(age.rules) ? age.rules : null;
-  const rules = new Map<number, string>();
-  for (const x of rawRules ?? []) {
-    const hours = Number(obj(x).hours);
-    const color = hexColor(obj(x).color);
-    if (Number.isFinite(hours) && hours > 0 && hours <= 720 && color) rules.set(Math.round(hours * 4) / 4, color);
-  }
+  const images = obj(r.images);
   const perPage = Number(r.imageRowsPerPage);
+  const bool = (v: unknown, def: boolean) => (typeof v === "boolean" ? v : def);
   return {
     hiddenSheets: [...new Set(strings(r.hiddenSheets))].filter((s): s is HourlySheet =>
       (HOURLY_SHEETS as readonly string[]).includes(s),
@@ -118,22 +175,35 @@ export function normalizeHourlyPrefs(raw: unknown): HourlyPrefs {
     hiddenCategories: [...new Set(strings(r.hiddenCategories))].filter((c): c is Category =>
       (CATS as string[]).includes(c),
     ),
-    hiddenAlarms: [...new Set(strings(r.hiddenAlarms).map((s) => s.trim().toUpperCase()).filter(Boolean))]
-      .slice(0, 1000),
+    hiddenAlarms: [
+      ...new Set(
+        strings(r.hiddenAlarms)
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    ].slice(0, 1000),
     tableColumns: columnList(r.tableColumns, d.tableColumns),
-    imageColumns: columnList(r.imageColumns, d.imageColumns),
-    sortBySite: typeof r.sortBySite === "boolean" ? r.sortBySite : d.sortBySite,
-    ageColors: {
-      enabled: typeof age.enabled === "boolean" ? age.enabled : d.ageColors.enabled,
-      // an explicitly empty list stays empty (the user removed every rule)
-      rules: rawRules
-        ? [...rules].sort((a, b) => a[0] - b[0]).slice(0, 10).map(([hours, color]) => ({ hours, color }))
-        : d.ageColors.rules,
-      target: HOURLY_AGE_TARGETS.includes(age.target as HourlyAgeTarget)
-        ? (age.target as HourlyAgeTarget)
-        : d.ageColors.target,
-      columns: columnList(age.columns, d.ageColors.columns),
-    },
+    // older settings: sortBySite true → by site code
+    sort: HOURLY_SORT_CHOICES.includes(r.sort as HourlySortChoice)
+      ? (r.sort as HourlySortChoice)
+      : r.sortBySite === true
+        ? "code"
+        : d.sort,
+    // an explicitly empty rule list stays empty (the user removed every rule)
+    colors: colorRules(r),
+    images: Object.fromEntries(
+      HOURLY_IMAGE_SETS.map((k) => {
+        const x = obj(images[k]);
+        return [
+          k,
+          {
+            enabled: bool(x.enabled, d.images[k].enabled),
+            byOffice:
+              HOURLY_IMAGE_SETS_BY_OFFICE.includes(k) && bool(x.byOffice, d.images[k].byOffice),
+          },
+        ];
+      }),
+    ) as HourlyPrefs["images"],
     split: {
       mode: HOURLY_SPLIT_MODES.includes(split.mode as HourlySplitMode)
         ? (split.mode as HourlySplitMode)
@@ -166,7 +236,7 @@ export function visibleHourlyRows(rows: readonly HourlyRow[], p: HourlyPrefs): H
 
 /** Sort used when the user has not clicked a column header. */
 export const hourlySortFor = (p: HourlyPrefs): HourlySort =>
-  p.sortBySite ? HOURLY_SORT_BY_SITE : HOURLY_DEFAULT_SORT;
+  p.sort === "code" ? HOURLY_SORT_BY_SITE : HOURLY_DEFAULT_SORT;
 
 /**
  * Copies of the rows with `siteNo` (1, 2, … by first appearance of the site code — rows of one
@@ -182,7 +252,9 @@ export function numberSites(rows: readonly HourlyRow[]): HourlyRow[] {
     count.set(r.code, (count.get(r.code) ?? 0) + 1);
   }
   return rows.map((r) =>
-    r.code ? { ...r, siteNo: no.get(r.code), siteAlarms: count.get(r.code) } : { ...r, siteNo: undefined, siteAlarms: undefined },
+    r.code
+      ? { ...r, siteNo: no.get(r.code), siteAlarms: count.get(r.code) }
+      : { ...r, siteNo: undefined, siteAlarms: undefined },
   );
 }
 
@@ -196,29 +268,22 @@ const wallMs = (s: string): number => {
 };
 
 /** Hours between the alarm time and `ref` (both wall clock "YYYY-MM-DD HH:mm:ss"); null when unknown. */
-export function hourlyAgeHours(row: Pick<HourlyRow, "alarmTime" | "clockInvalid">, ref: string): number | null {
+export function hourlyAgeHours(
+  row: Pick<HourlyRow, "alarmTime" | "clockInvalid">,
+  ref: string,
+): number | null {
   if (row.clockInvalid) return null;
   const h = (wallMs(ref) - wallMs(row.alarmTime)) / 3_600_000;
   return Number.isFinite(h) ? h : null;
 }
 
-/** Age colour of a row ("RRGGBB") or null when no rule applies / colouring is off. */
-export function hourlyAgeColor(
-  row: Pick<HourlyRow, "alarmTime" | "clockInvalid">,
-  ref: string | null,
-  age: HourlyPrefs["ageColors"],
-): string | null {
-  if (!age.enabled || !ref || !age.rules.length) return null;
-  const h = hourlyAgeHours(row, ref);
-  if (h === null) return null;
-  let color: string | null = null;
-  for (const rule of age.rules) if (h >= rule.hours) color = rule.color;
-  return color;
-}
+const covers = (rule: HourlyColorRule, key: HourlyColumnKey) =>
+  !rule.columns.length || rule.columns.includes(key);
 
 /**
- * Background of one cell in every output: the age colour where it applies (whole row or the
- * chosen columns), otherwise the office colour; null = no fill.
+ * Background of one cell in every output: a matching office rule, else the highest age rule the
+ * alarm reached (rules limited to other columns are skipped), else the built-in office colour;
+ * null = no fill. Rows with an invalid NE clock never get an age colour.
  */
 export function hourlyCellFill(
   row: HourlyRow,
@@ -226,8 +291,24 @@ export function hourlyCellFill(
   ref: string | null,
   p: HourlyPrefs,
 ): string | null {
-  const age = hourlyAgeColor(row, ref, p.ageColors);
-  if (age && (p.ageColors.target === "row" || p.ageColors.columns.includes(key))) return age;
+  if (p.colors.enabled) {
+    const office = row.office.trim().toUpperCase();
+    for (const rule of p.colors.rules)
+      if (rule.kind === "office" && rule.office === office && covers(rule, key)) return rule.color;
+    const h = ref ? hourlyAgeHours(row, ref) : null;
+    if (h !== null) {
+      let best: { hours: number; color: string } | null = null;
+      for (const rule of p.colors.rules)
+        if (
+          rule.kind === "age" &&
+          h >= rule.hours &&
+          covers(rule, key) &&
+          (!best || rule.hours >= best.hours)
+        )
+          best = rule;
+      if (best) return best.color;
+    }
+  }
   return officeColor(row.office);
 }
 
@@ -245,7 +326,10 @@ export interface HourlyGroup {
  * last, then categories in DOWN, POWER, OTHER order; empty groups are dropped. Always at least
  * one group (possibly with no rows).
  */
-export function splitHourlyRows(rows: readonly HourlyRow[], split: HourlyPrefs["split"]): HourlyGroup[] {
+export function splitHourlyRows(
+  rows: readonly HourlyRow[],
+  split: HourlyPrefs["split"],
+): HourlyGroup[] {
   const catGroups: Category[][] | null =
     split.mode === "category"
       ? CATS.map((c) => [c])
@@ -253,7 +337,9 @@ export function splitHourlyRows(rows: readonly HourlyRow[], split: HourlyPrefs["
         ? [["DOWN"], ["POWER", "OTHER"]]
         : null;
   const offices: (string | null)[] = split.byOffice
-    ? [...new Set(rows.map((r) => r.office))].sort((a, b) => (!a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0))
+    ? [...new Set(rows.map((r) => r.office))].sort((a, b) =>
+        !a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0,
+      )
     : [null];
   const out: HourlyGroup[] = [];
   for (const office of offices) {
@@ -264,6 +350,67 @@ export function splitHourlyRows(rows: readonly HourlyRow[], split: HourlyPrefs["
       const officeLabel = office === null ? "" : office || "Unknown office";
       const label = [officeLabel, cats ? cats.join(" + ") : ""].filter(Boolean).join(" · ");
       out.push({ label, office, categories: cats, rows: numberSites(g) });
+    }
+  }
+  return out.length ? out : [{ label: "", office: null, categories: null, rows: [] }];
+}
+
+/** Offices A→Z, unknown last. */
+const officeOrder = (a: string | null, b: string | null) =>
+  !a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0;
+
+export const HOURLY_IMAGE_SET_LABEL: Record<HourlyImageSet, string> = {
+  down: "DOWN",
+  downSites: "DOWN SITES",
+  env: "ENVIRONMENTAL",
+  envVipNodal: "ENVIRONMENTAL · VIP / NODAL",
+  power: "POWER",
+};
+
+/**
+ * Rows (already filtered and sorted) → the image groups of the enabled sets, in the order of
+ * HOURLY_IMAGE_SETS; a set split per office gives one group per office (A→Z, unknown last).
+ * "DOWN SITES" keeps the first alarm of each site code (rows without a code are left out), and
+ * its `siteAlarms` still counts every DOWN alarm of that site. Empty groups are dropped; always
+ * at least one group (possibly with no rows).
+ */
+export function hourlyImageGroups(
+  rows: readonly HourlyRow[],
+  images: HourlyPrefs["images"],
+): HourlyGroup[] {
+  const down = rows.filter((r) => r.category === "DOWN");
+  const env = rows.filter((r) => r.category !== "DOWN");
+  const source: Record<HourlyImageSet, { rows: readonly HourlyRow[]; categories: Category[] }> = {
+    down: { rows: down, categories: ["DOWN"] },
+    downSites: { rows: down, categories: ["DOWN"] },
+    env: { rows: env, categories: ["POWER", "OTHER"] },
+    envVipNodal: {
+      rows: env.filter((r) => r.vip || isNodal(r.nodality)),
+      categories: ["POWER", "OTHER"],
+    },
+    power: { rows: rows.filter((r) => r.category === "POWER"), categories: ["POWER"] },
+  };
+  const out: HourlyGroup[] = [];
+  for (const set of HOURLY_IMAGE_SETS) {
+    if (!images[set].enabled) continue;
+    const { rows: list, categories } = source[set];
+    const label = HOURLY_IMAGE_SET_LABEL[set];
+    if (set === "downSites") {
+      const seen = new Set<string>();
+      const sites = numberSites(list).filter(
+        (r) => r.code && !seen.has(r.code) && seen.add(r.code),
+      );
+      if (sites.length) out.push({ label, office: null, categories, rows: sites });
+      continue;
+    }
+    const offices: (string | null)[] = images[set].byOffice
+      ? [...new Set(list.map((r) => r.office))].sort(officeOrder)
+      : [null];
+    for (const office of offices) {
+      const g = office === null ? list : list.filter((r) => r.office === office);
+      if (!g.length) continue;
+      const name = office === null ? label : `${label} · ${office || "Unknown office"}`;
+      out.push({ label: name, office, categories, rows: numberSites(g) });
     }
   }
   return out.length ? out : [{ label: "", office: null, categories: null, rows: [] }];

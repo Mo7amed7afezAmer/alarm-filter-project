@@ -236,3 +236,22 @@ model HourlyNormalization {
   @@unique([field, from])
   @@map("hourly_normalizations")
 }
+
+/// Alarm names seen in processed hourly reports — the hide lists of Settings → Hourly reports
+/// (2026-10-25). Updated on every processing; nothing else about the rows is stored.
+model HourlyAlarmName {
+  /// alarmName as shown in the report (upper-case after normalization)
+  name      String   @id
+  /// DOWN (a *_Down sheet) or ENV (Environmental / HW: POWER + OTHER)
+  section   String
+  category  String
+  /// Rows with this name in the newest report it was seen in
+  lastCount Int      @default(0)
+  /// Time of the newest report (mail) it was seen in
+  lastSeen  DateTime @default(now())
+  /// Alarm Text values seen with this name (Environmental: "BASE STATION EXTERNAL ALARM
+  /// NOTIFICATION", …) — the settings search matches them too
+  alarmTexts String[] @default([])
+
+  @@map("hourly_alarm_names")
+}

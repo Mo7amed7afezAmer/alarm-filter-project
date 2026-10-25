@@ -36,7 +36,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <AppConfigProvider value={config}>
       <UiPrefsProvider initial={normalizeUiPrefs(user.uiPrefs)}>
         <Nav />
-        <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5 sm:px-6 sm:py-6 md:ml-64 md:mr-0 md:max-w-none lg:px-8">
+        <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5 sm:px-6 sm:py-6 md:ml-52 md:mr-0 md:max-w-none lg:px-8">
           <HiddenTypesNote />
           {children}
         </main>

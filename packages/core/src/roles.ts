@@ -37,6 +37,26 @@ export function scopeOfficeOf(user: Pick<Account, "role" | "office">): string | 
   return user.office || "";
 }
 
+/**
+ * The super admin can also view a whole office group: the parent label ("DN") of the office
+ * labels "DN/…" (2026-10-25). Office labels always have a parent, so a scope without "/" is a
+ * group. Office users always have one office label.
+ */
+export const isOfficeGroup = (scope: string | null | undefined): scope is string =>
+  !!scope && !scope.includes("/");
+
+/** Is an office label (alarm / mail office) inside the scope? null scope = every office. */
+export function officeInScope(office: string | null | undefined, scope: string | null): boolean {
+  if (scope === null) return true;
+  if (!office) return false;
+  return office === scope || (isOfficeGroup(scope) && office.startsWith(`${scope}/`));
+}
+
+/** Office groups ("DN", "DS") of a list of office labels, in first-seen order. */
+export const officeGroups = (labels: readonly string[]): string[] => [
+  ...new Set(labels.filter((l) => l.includes("/")).map((l) => l.slice(0, l.lastIndexOf("/")))),
+];
+
 /** Roles this actor may give to accounts they create or edit. */
 export function assignableRoles(actor: Pick<Account, "role">): Role[] {
   if (isSuperAdmin(actor.role)) return [...ROLES];

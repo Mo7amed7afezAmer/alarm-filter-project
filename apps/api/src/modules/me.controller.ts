@@ -18,6 +18,8 @@ import {
 const displayBody = z.object({
   hiddenCategories: z.array(category).max(3),
   hiddenAlarmNames: z.array(z.string().trim().min(1).max(200)).max(1000),
+  /** Site codes / full site names where the hidden types still show. */
+  exceptSites: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
 });
 
 const prefsBody = z.object({
@@ -34,6 +36,7 @@ const uiPrefsBody = z.object({
     view: z.string().max(10).optional(),
     siteInfoIcons: z.boolean(),
     groupBySite: z.boolean(),
+    mailGroupBySite: z.boolean().optional(),
     hiddenColumns: z.record(z.array(z.string().max(40)).max(40)),
     mail: z.record(z.boolean()).optional(),
   }),
@@ -44,14 +47,22 @@ const uiPrefsBody = z.object({
       hiddenCategories: z.array(z.string().max(10)).max(3),
       hiddenAlarms: z.array(z.string().max(200)).max(1000),
       tableColumns: z.array(z.string().max(40)).max(40),
-      imageColumns: z.array(z.string().max(40)).max(40),
-      sortBySite: z.boolean(),
-      ageColors: z.object({
+      sort: z.string().max(10),
+      colors: z.object({
         enabled: z.boolean(),
-        rules: z.array(z.object({ hours: z.number(), color: z.string().max(10) })).max(10),
-        target: z.string().max(20),
-        columns: z.array(z.string().max(40)).max(40),
+        rules: z
+          .array(
+            z.object({
+              kind: z.string().max(10),
+              hours: z.number().optional(),
+              office: z.string().max(100).optional(),
+              color: z.string().max(10),
+              columns: z.array(z.string().max(40)).max(40),
+            }),
+          )
+          .max(30),
       }),
+      images: z.record(z.object({ enabled: z.boolean(), byOffice: z.boolean() })),
       split: z.object({ mode: z.string().max(20), byOffice: z.boolean() }),
       imageRowsPerPage: z.number(),
     })

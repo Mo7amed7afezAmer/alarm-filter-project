@@ -22,6 +22,7 @@ import {
   type Site,
 } from "@/components/site-master/dialogs";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { usePoll } from "@/components/use-poll";
 
 interface SitesPage {
@@ -225,7 +226,11 @@ function SiteMasterView() {
         )}
       </FilterBar>
 
-      {msg && <p className="text-sm text-slate-500">{msg}</p>}
+      {msg && (
+        <Notice tone={msg.startsWith("Error") ? "error" : "success"} onClose={() => setMsg(null)}>
+          {msg}
+        </Notice>
+      )}
       {error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           Could not load: {error}

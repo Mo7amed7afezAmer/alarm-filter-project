@@ -134,6 +134,36 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     expect(again.status).toBe(200);
   });
 
+  it("processing saves the alarm names (Down / Environmental); collect reads the newest reports", async () => {
+    as("VIEWER");
+    const r = await call("/api/hourly-alarm-names");
+    expect(r.status).toBe(200);
+    type Name = { name: string; section: string; category: string; lastCount: number };
+    const byName = new Map<string, Name>(r.body.data.map((n: Name) => [n.name, n]));
+    expect(byName.get("MAIN POWER CUT OFF")).toMatchObject({ section: "ENV", category: "POWER" });
+    expect(r.body.data.some((n: Name) => n.section === "DOWN" && n.category === "DOWN")).toBe(true);
+    // Environmental names keep the Alarm Text they come with (the settings search matches it)
+    const texts = r.body.data
+      .filter((n: Name) => n.section === "ENV")
+      .flatMap((n: Name & { alarmTexts: string[] }) => n.alarmTexts);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.every((t: string) => t.trim().length > 0)).toBe(true);
+    expect(r.body.meta.collectReports).toBe(24);
+
+    expect((await call("/api/hourly-alarm-names/collect", { method: "POST" })).status).toBe(403);
+    as("OPERATOR");
+    const c = await call("/api/hourly-alarm-names/collect", { method: "POST" });
+    expect(c.status).toBe(202);
+    let collect = c.body.meta.collect;
+    for (let i = 0; i < 240 && collect.running; i++) {
+      await new Promise((res) => setTimeout(res, 250));
+      collect = (await call("/api/hourly-alarm-names")).body.meta.collect;
+    }
+    expect(collect).toMatchObject({ running: false });
+    expect(collect.total).toBeGreaterThan(0);
+    expect(collect.done).toBe(collect.total);
+  });
+
   it("rows filtered by office and alarm return only matching rows", async () => {
     as("VIEWER"); // processed now → viewers can read
     const office = await call(report(`rows?office=KAFR%20EL%20DAWAR&limit=500`));
