@@ -464,11 +464,12 @@ async function main() {
     await cap("<b>Users & roles</b>: إضافة مستخدمين وتحديد الصلاحية والمكتب، و<b>Reset password</b> و<b>Delete</b>", 6000);
     await cap("الصلاحيات: <b>viewer</b> (مشاهدة) < <b>operator</b> (يعالج التقارير) < <b>office admin</b> (يدير مستخدمي مكتبه) < <b>super admin</b> (كل حاجة)", 7500);
 
-    await goSide("Office view", "/settings/office");
+    // Office view and Reprocess are cards on Settings → General (2026-10-25).
+    await goSide("General", "/settings/general");
     await scene("الإعدادات — Office view");
     await safe("office", () => spot(page.locator("main select").first(), "<b>Office view</b> (للـ<b>super admin</b>): تختار المكتب اللي تشوف بياناته أو <b>All offices</b>، وكل مستخدم تاني بيشوف مكتبه بس", 6500));
 
-    await goSide("Reprocess", "/settings/reprocess");
+    await scroll(1500, 600);
     await scene("الإعدادات — Reprocess");
     await cap("<b>Reprocess</b>: يعيد بناء الألارمات من الإيميلات المخزّنة لعدد أيام تختاره (مثلاً بعد تعديل القواعد) — <b>Queue reprocess</b> والـworker بينفّذ", 7000);
 

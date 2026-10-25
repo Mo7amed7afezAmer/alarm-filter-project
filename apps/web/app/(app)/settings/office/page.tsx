@@ -1,15 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useAppConfig } from "@/components/app-config";
-import { OfficePicker } from "@/components/settings/admin";
-import { NoAccess, SectionHeader } from "@/components/settings/section";
-
-export default function OfficeSettings() {
-  const { role } = useAppConfig();
-  return (
-    <>
-      <SectionHeader title="Office view" subtitle="Which office the pages show for you." />
-      {role === "SUPER_ADMIN" ? <OfficePicker /> : <NoAccess />}
-    </>
-  );
+/** Old address — the office view is part of Settings → General now. */
+export default function OfficeRedirect() {
+  redirect("/settings/general");
 }

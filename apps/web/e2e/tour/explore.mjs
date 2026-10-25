@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const env = Object.fromEntries(readFileSync(new URL("../../.env.local", import.meta.url), "utf8")
   .split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).replace(/^"|"$/g, "")]));
 const BASE = process.env.BASE ?? "http://localhost:3310";
-const pages = (process.argv[2] ?? "/alarms,/cleared,/dashboard,/hourly,/hourly/compare,/settings/general,/settings/notifications,/settings/alarms/display,/settings/alarms/classification,/settings/hourly,/settings/users,/settings/office,/settings/reprocess,/settings/gmail,/settings/site-master").split(",");
+const pages = (process.argv[2] ?? "/alarms,/cleared,/dashboard,/hourly,/hourly/compare,/settings/general,/settings/notifications,/settings/alarms/display,/settings/alarms/classification,/settings/hourly,/settings/users,/settings/gmail,/settings/site-master").split(",");
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
 await p.goto(BASE + "/login", { timeout: 300000 });

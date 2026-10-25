@@ -7,7 +7,6 @@ import {
   FileSpreadsheet,
   Mail,
   Palette,
-  RefreshCw,
   Tags,
   Users,
   type LucideIcon,
@@ -45,7 +44,12 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
     title: "Alarms",
     items: [
       { href: "/settings/alarms/display", label: "Display alarms", icon: Eye },
-      { href: "/settings/alarms/classification", label: "Classification", icon: Tags, roles: SUPER },
+      {
+        href: "/settings/alarms/classification",
+        label: "Classification",
+        icon: Tags,
+        roles: SUPER,
+      },
     ],
   },
   {
@@ -56,10 +60,13 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
     title: "Administration",
     items: [
       { href: "/settings/users", label: "Users & roles", icon: Users, roles: ADMINS },
-      { href: "/settings/office", label: "Office view", icon: Building2, roles: SUPER },
-      { href: "/settings/reprocess", label: "Reprocess", icon: RefreshCw, roles: SUPER },
       { href: "/settings/gmail", label: "Gmail connection", icon: Mail, roles: SUPER },
-      { href: "/settings/site-master", label: "Value normalization", icon: Building2, roles: SUPER },
+      {
+        href: "/settings/site-master",
+        label: "Value normalization",
+        icon: Building2,
+        roles: SUPER,
+      },
     ],
   },
 ];
@@ -76,7 +83,11 @@ function SaveIndicator() {
         saveState === "error" && "bg-red-50 text-red-700",
       )}
     >
-      {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved to your account" : "Could not save"}
+      {saveState === "saving"
+        ? "Saving…"
+        : saveState === "saved"
+          ? "Saved to your account"
+          : "Could not save"}
     </span>
   );
 }

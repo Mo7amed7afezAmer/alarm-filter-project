@@ -1,7 +1,11 @@
 "use client";
 
+// Settings → General: the theme (everyone) and, for the super admin, the office being viewed and
+// reprocessing (user request 2026-10-25: one page instead of three).
 import { Check } from "lucide-react";
 import type { Theme } from "@alarm/core";
+import { useAppConfig } from "@/components/app-config";
+import { OfficePicker, Reprocess } from "@/components/settings/admin";
 import { SectionHeader } from "@/components/settings/section";
 import { useUiPrefs } from "@/components/ui-prefs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +24,10 @@ function ThemePreview({ theme }: { theme: Theme }) {
       data-theme={theme}
       className="flex h-24 overflow-hidden rounded-lg border border-slate-200 bg-background"
     >
-      <div data-theme={theme === "light" ? "blue" : theme} className="w-1/4 space-y-1.5 bg-sidebar p-2">
+      <div
+        data-theme={theme === "light" ? "blue" : theme}
+        className="w-1/4 space-y-1.5 bg-sidebar p-2"
+      >
         <div className="h-2 w-3/4 rounded bg-brand" />
         <div className="h-1.5 w-full rounded bg-sidebar-accent" />
         <div className="h-1.5 w-full rounded bg-sidebar-primary" />
@@ -48,10 +55,19 @@ function ThemePreview({ theme }: { theme: Theme }) {
 }
 
 export default function GeneralSettings() {
+  const { role } = useAppConfig();
   const { prefs, update } = useUiPrefs();
+  const superAdmin = role === "SUPER_ADMIN";
   return (
     <>
-      <SectionHeader title="General" subtitle="How the site looks for you." />
+      <SectionHeader
+        title="General"
+        subtitle={
+          superAdmin
+            ? "Theme, the office you are looking at, and reprocessing."
+            : "How the site looks for you."
+        }
+      />
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">Theme</CardTitle>
@@ -91,6 +107,12 @@ export default function GeneralSettings() {
           })}
         </CardContent>
       </Card>
+      {superAdmin && (
+        <>
+          <OfficePicker />
+          <Reprocess />
+        </>
+      )}
     </>
   );
 }

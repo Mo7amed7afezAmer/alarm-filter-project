@@ -437,8 +437,10 @@ Mobile: list + read-only table with the same filters.
       Sidebar = `components/nav.tsx` (fixed w-64 on md+, drawer + top bar below md).)
       (2026-10-22, user request: settings redesign. Settings is for EVERY user now, with its own
       section sidebar (`app/(app)/settings/layout.tsx`, routes /settings/general | notifications |
-      alarms/display | alarms/classification | users | office | reprocess | gmail | site-master,
+      alarms/display | alarms/classification | hourly | users | gmail | site-master,
       shown by role). /preferences and /notifications redirect to /settings/notifications.
+      2026-10-25: Office view + Reprocess are cards on /settings/general (super admin only, under
+      the Theme); /settings/office and /settings/reprocess redirect there.
       Per-user UI settings in `users.uiPrefs` (migration `20261022000000_user_ui_prefs`,
       `packages/core/src/uiPrefs.ts`, GET|PUT `/api/me/ui-prefs`, auto-saved by
       `components/ui-prefs.tsx`): theme `blue` (the navy default) | `dark` | `light`, rendered as
