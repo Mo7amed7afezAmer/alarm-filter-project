@@ -211,6 +211,7 @@ SystemStatus id=1, lastHistoryId, lastRunAt, lastError?, lastRunMessages, reproc
 1. `/alarms` — active table; filters category/site/region in URL; live "age" column
    (30s); rows older than `ALERT_HOURS` (default 4) highlighted; auto-refresh 60s.
 2. `/cleared` — cleared table; date range; duration; clearType badge; Excel export.
+   50 clears per page (user request 2026-10-28; /alarms stays at 100).
 3. `/dashboard` — counters per category, 30-day stacked bar, top-10 sites, MTTR,
    status bar "last sync X min ago" (red if > 5 min or `lastError`).
 4. `/settings` — rules editor, users (admin only).
@@ -366,6 +367,8 @@ Mobile: list + read-only table with the same filters.
 - The /hourly page loads all rows of a report (rows API, pages of 500) and filters/sorts in
   the browser with the same core functions; export goes through the API with the same
   filters + visible columns. Report list paging is `page`, mapped to Gmail page tokens.
+  `pageSize` (1–50, default 25) on `GET /api/hourly-reports`; the Hourly Alarms list asks for
+  10 (user request 2026-10-29), Compare / "Compare with previous" keep 25.
 - Deviations found in the real files: Environmental *Alarm Text* is NOT constant (EXTERNAL
   AL n, FIRE ALARM, … in a minority of rows) — alarmName is still Supplementary Information,
   falling back to Alarm Text when empty. Normalization rules replace whole words, and an
@@ -409,6 +412,17 @@ Mobile: list + read-only table with the same filters.
   (default: each category, so Excel now has DOWN/POWER/OTHER sheets). New output-only columns
   `siteNo` ("Site #": 1, 2, … per distinct site code, last = number of sites) and `siteAlarms`
   (rows of that code), numbered per group by `numberSites()`; images/PDF/footer show "N sites".
+- **Hourly settings are per OFFICE, admins only (2026-10-25, user request):** table
+  `hourly_settings` (migration `20261025020000_hourly_settings`; key = office label, or "*" =
+  default for offices without their own, seeded from the super admin's old
+  `users.uiPrefs.hourly`, which is no longer read). `@alarm/db` `getHourlySettings(prisma, scope)`
+  = own row → "*" → built-in; `hourlyEditKey(user, scope)`: office admin → their office, super
+  admin → viewed office label, else "*" (all offices / a group), others → null. API
+  `GET /api/hourly-settings` {data, meta {source, editKey, own}} for everyone, `PUT` / `DELETE`
+  (back to the default) for ADMIN+; the Excel export uses the office's settings. Web: the (app)
+  layout resolves them server-side → `components/hourly-prefs.tsx` (`useHourlyPrefs`), used by the
+  report, compare, image / PDF export and column chooser (shown to admins only). The settings tab
+  is ADMIN+ and shows whose settings are edited + "Use the default again".
 - **Hourly settings redesign (2026-10-25, user request):** /settings/hourly ("Alarms, images &
   colours") — sections Alarms / Columns / Images / Sort / Colours are a gap accordion (separate
   collapsible cards, header = title + one-line summary of the current setting, several open at
@@ -417,11 +431,27 @@ Mobile: list + read-only table with the same filters.
   converted by `normalizeHourlyPrefs`): `sort` time | code (was `sortBySite`); `colors` = {enabled,
   rules: age {hours} | office {office}, each with colour + columns ([] = whole row)} (was
   `ageColors`) — **an office rule wins over age** (user choice), highest age period wins, else the
-  built-in office colour; `images` = sets down / downSites / env / envVipNodal / power, each
+  built-in office colour. **Office colours list (2026-10-29, user request):** under the rules,
+  every Site Master office with a colour picker → `colors.offices` {OFFICE: "RRGGBB"} = the
+  Office cell's colour, and `colors.officeRowTint` (default on) = the office's other cells get
+  `lighterColor()` (65 % toward white) of it, off = no colour there; an office left on Default
+  keeps the built-in colour on the whole row; age rules still win. Same day (user request):
+  **rules are age-only** — the "office" rule kind and the "Office rule" button are gone; on
+  read, an old office rule becomes that office's entry in `colors.offices` (an existing entry
+  wins).
+  `images` = sets down / downSites / env / envVipNodal / power, each
   {enabled, byOffice} (byOffice only for down, env, envVipNodal) → `hourlyImageGroups()`: Down;
   Down sites = DOWN, all offices, first alarm per site code (siteAlarms keeps the site's count);
   Environmental = POWER + OTHER; Env · VIP / Nodal (separate image, user choice); Power only.
-  Default: Down + Down sites + Environmental. `split` stays for the Excel API only. Alarm hide
+  Default: Down + Down sites + Environmental. `split` stays for the Excel API only.
+  **Office groups (2026-10-29, user request):** a set that can split by office (down, env,
+  envVipNodal) has a third mode — `HourlyImageSetPrefs` {enabled, byOffice, grouped},
+  `hourlyOfficeMode()` all | each | groups. **Groups are automatic** (user, same day — the first
+  hand-made group editor was replaced): `packOffices()` first-fit decreasing — whole offices,
+  biggest first, into images of up to the export window's Rows per image; an office with that
+  many rows or more stands alone ("DOWN · TANTA + BENHA"; inside an image the offices follow one
+  another). `hourlyImageGroups(rows, images, rowsPerImage)`. Settings → Images: radio "Office
+  groups" + a one-line explanation. No migration (prefs are JSON; old `groups` are dropped). Alarm hide
   lists = **Down** and **Environmental** from table `hourly_alarm_names` (migration
   `20261025000000_hourly_alarm_names`: name, section DOWN|ENV, category, lastCount, lastSeen),
   filled on every processing (`recordAlarmNames`) and by "Collect from the last 24 reports"
@@ -430,7 +460,31 @@ Mobile: list + read-only table with the same filters.
   file, 19 Down + 125 Environmental names. `alarmTexts` (migration
   `20261025010000_hourly_alarm_texts`, union of the Alarm Text values seen with the name) lets the
   settings search find Environmental alarms by their wrapper text "BASE STATION EXTERNAL ALARM
-  NOTIFICATION" (120 names), shown as "Alarm Text: …" under each match.
+  NOTIFICATION" (120 names), shown as "Alarm Text: …" under each match. **A hidden name also
+  hides rows whose Alarm Text is that name** (`visibleHourlyRows`, table + images + Excel), so a
+  wrapper text added by hand ("Add an alarm by name", `POST /api/hourly-alarm-names` {name,
+  section}, any user, 201 new / 200 existing) and unticked hides all its Environmental rows.
+  **Alarms section redesign (2026-10-29, user request: "like the Display alarms editor"):** one
+  list (All / Down / Environmental · All / Changed (n) · search name or Alarm Text) with, per
+  name: section tag, a **category select** (`alarmCategories` {NAME: DOWN|POWER|OTHER}, only
+  when it differs from the report's), last count, **Sites** (`alarmSites` {NAME: codes or full
+  site names}: hidden → still shows there, shown → hidden there; matched on the row's alarm name
+  or Alarm Text, code or site name) and Shown / Hidden (`hiddenAlarms`); Show all / Hide all for
+  the listed rows; one "Add an alarm by name" with a Down / Environmental pick. Later the same
+  day (user request): the Categories chips are gone (an old `hiddenCategories` value shows an
+  amber "Show them again" note) and the Sheets chips + both tab rows became select boxes in
+  one h-8 row with the search — Sheets (MultiSelect, none ticked = all, an "All sheets" line on
+  top via the new `allOption` prop), Down + Environmental / Down / Environmental / Power (Power
+  = the name's category, changed or not), All alarms / Changed (n). `visibleHourlyRows` applies the category first (`hourlyRowCategory`, so
+  hidden categories and the image sets see the new one), then typeHidden XOR excepted.
+  `SiteList` / `VisibilityButton` are exported from `components/types-visibility-editor.tsx`.
+- **Image settings gear on "Table as image" (2026-10-29, user request, like the alarms image):**
+  the gear in the window header opens "Image settings" (z-60) with tabs **Images** (the image-set
+  checkboxes of this export, moved out of the options row) and **Share settings** — per user in
+  `uiPrefs.hourlyShare` {mode all | office, all, offices {SITE MASTER OFFICE: chat}}
+  (`normalizeHourlyShare`, `ChatInput` from alarm-image.tsx). Office mode: each office with a
+  saved chat gets the same image sets drawn from ITS rows only (per-office split off), and Send
+  delivers them to that chat; `savedChats()` (API allow-list) includes these chats.
 - **Report page trimmed (2026-10-25, user request):** /hourly/[gmailId] header keeps only "Export
   image" (was "Image for WhatsApp") and "Compare with previous" — Copy as table, PDF and Export
   Excel buttons removed from the page (the export API, `copyRows` and `TablePdfButton` remain).
@@ -489,7 +543,15 @@ Mobile: list + read-only table with the same filters.
       table (active / cleared); "one row per site code" grouping (siteCode ?? site, current page
       only; click the row to expand). Themes: every Tailwind colour is a CSS variable generated per
       theme in `tailwind.config.ts`; the sidebar stays dark in the light theme (data-theme="blue"
-      on it). Integration tests share alarms_test — run them with `--no-file-parallelism`.)
+      on it). **"Show borders"** switch under the theme cards (2026-10-27, `uiPrefs.borders`, default
+      on): off → `<html data-borders="off">` (root layout + `ui-prefs.tsx` live), `globals.css`
+      makes `--border` and border-slate-100/200 + divide-slate-100/200 transparent; slate-300
+      (checkboxes, radio circles), coloured borders and inputs / selects keep theirs.
+      2026-10-28 (user request): **borderless is the default** (`borders: false`). In borderless
+      mode, tints replace the lines (base layer, `:where` = zero specificity, so an element's own
+      bg-* still wins): table header keeps the same colour as with borders on (user), striped rows (+ hover), striped divide-slate lists,
+      and boxes with a full grey `border` become soft slate-100 panels (dividers stay plain).
+      Integration tests share alarms_test — run them with `--no-file-parallelism`.)
       (2026-10-24, user request: **Mail view** of /alarms and /cleared — `uiPrefs.alarms.view`
       `table | mail`, switch in the page header; `components/alarm-mail.tsx`. Gmail-style card:
       the real mail subject, label chips ALM/CLR (from status), office, GEN, NDLN, VIP, BAT / NO BAT,
@@ -535,12 +597,134 @@ Mobile: list + read-only table with the same filters.
       "DG/ET" are not GEN — everywhere: tags, the alarms Site-tag filter and the Site Master
       Generator filter (codes picked with hasGenerator(), not SQL LIKE). Smaller corners on
       the alarm cards, tags and tabs.)
+      (2026-10-26, user request: **/alarms "Export image"** replaces the Excel Export button (the
+      `/api/export` API stays). `components/alarm-image.tsx`: loads every active alarm of the
+      page's filters (pages of 500, category tab NOT sent — the tab only picks the sites), folds
+      them to ONE ROW PER SITE (`siteImageRows`, `packages/core/src/alarmImage.ts`; site shown as
+      `shortSite()` = last two "_" parts, e.g. BH-MADIA-RASHD_0342DE; time = oldest alarm). Columns
+      (`ALARM_IMAGE_COLUMNS`, default time · site · age · down · power; also other, office,
+      alarms, tags, phone): Down / Power / Other = "✓" or "✓ n" on the category colour (red-300 /
+      amber-300 / slate-300), empty when none; age cell red-100 past ALERT_HOURS. Sites with alarms
+      only in hidden category columns are left out (`visibleSiteRows`). Sort oldest | newest |
+      down first | power first | site (`sortSiteRows`). All offices in one table or one per office
+      (super admin, several offices). Settings saved per user in `uiPrefs.alarms.image`. Drawing +
+      the Share / Download window moved to `components/image-export.tsx`, shared with the hourly
+      image (`table-image.tsx` now uses it). Share button = green **WhatsApp** button (no menu,
+      user 2026-10-26): opens `whatsapp://send` on a touch device, else web.whatsapp.com in a new
+      tab. A page cannot hand files to WhatsApp, so it first copies the image to the clipboard
+      (one image, secure context) or downloads the images to attach. Web Share sheet removed.
+      2026-10-27 (user request): image columns **VIP** (✓) and **Nodal** (Site Master nodality,
+      "✓" when only the mail label says nodal). 2026-10-28: no "Office" sort; with all offices in
+      one table the rows are grouped by office name first, the chosen sort inside each office.
+      2026-10-28 (user request): VIP column = YES / NO (Site Master, or YES from the VIP mail label;
+      empty when unknown), Nodal = the Site Master nodality ("1+0", "1+2"; "NODAL" when only the
+      label says so). A "Settings" button opens a panel: a colour per office (fill of the Office
+      cell, `image.officeColors` {office name: "#rrggbb"}, per user) and the WhatsApp number
+      (`image.whatsappPhone`, `whatsappNumber()`: digits with country code, Egyptian 01… → 201…);
+      the WhatsApp button then opens `whatsapp://send?phone=` / `web.whatsapp.com/send?phone=`. Bug fix:
+      the image settings were never saved — the `PUT /api/me/ui-prefs` zod schema dropped
+      `alarms.image`; it is accepted now, and the window shows "Settings saved".
+      2026-10-28 (user request): the settings button is a gear icon at the right end of the action
+      row (WhatsApp / Download, aligned with the select boxes); the colour swatch circles are gone
+      (colour picker + clear only). **Share chats** replace the single number: `image.shareAll`
+      (number or group invite link, gets ALL images; old `whatsappPhone` converts into it) and
+      `image.shareOffices` {office name: number or group link} (gets only that office's images —
+      drawn per office even when the shown images are one table). `whatsappTarget()` /
+      `normalizeWhatsAppTarget()` / `whatsappUrl()` in `alarmImage.ts` (group → web.whatsapp.com/
+      accept?code= on desktop, chat.whatsapp.com/<code> on a phone). The dialog's "Send to N
+      chats" walks the chats ONE CLICK EACH (copy one image / download, open the chat; chips show
+      which are done): a browser cannot post images to several chats in one click — true
+      one-click sending would need a server-side WhatsApp integration.
+      Later the same day (user: "opens the chat without the images"): the gear sits in the window
+      header next to Close, Send / Download stay in the options row. Share has a switch
+      `image.shareMode` all (every image → shareAll) | office (each office chat → its images);
+      old prefs with only office chats become "office". Delivery (`deliver()` in
+      `image-export.tsx`): phone or no clipboard → Web Share sheet with the files (images go in,
+      the user picks the chat); computer → copy image 1 + open the chat, then a green bar "Copy
+      image n of N" to paste each; plain http on the LAN (no secure context) → download + open
+      the chat, with a note that HTTPS (Phase 10) or localhost sends them directly.
+      User report "each Send opens another WhatsApp tab / only the chat, no images":
+      `openWhatsApp()` (image-export.tsx, also used by the Send panel) opens web links in ONE
+      named tab "alarm-filter-whatsapp" (no noopener — Chrome ignores the name with it; opener
+      nulled after). After a copy, an amber bar stays until Done: "Image n of N is copied — click
+      the message box in WhatsApp and press Ctrl+V", with "Copy image n+1". Images still cannot
+      be attached by a link; real automatic sending needs a server-side WhatsApp sender.
+      Category select in the window (user request): All categories / Down / Power / Other /
+      Power + Other (`ALARM_IMAGE_CATEGORIES`), starting at the page's tab on every open
+      (`imageCategoryOf`); picks the sites (`sitesWithCategories`) and the time / count categories
+      (`shownCategories` takes a list); the image subtitle starts with the choice (the page no
+      longer puts the tab in it). Split choices (user request): "All categories · one table",
+      "All · one table per category" (Down, Power, Other) and "All · Down | Power + Other" — each
+      choice has `tables` [{label, cats}]; every table gets its own image set (and per office when
+      split by office), title/subtitle/file name carry the table word, an empty table is skipped
+      in a split, and a site with alarms of two tables is in both. `choiceCategories(id)` = the
+      categories the choice covers ([] = all).
+      Later (user request): the gear opens its own centred **Image settings** window (z-60 over
+      the export window) with tabs Columns (the column checkboxes, moved out of the options row)
+      · Office colours · Share settings, and a Done button; the options row keeps Rows per
+      image, Sort, Offices.
+      Bug fix 2026-10-28: a site row's Time / Age / sort used the oldest alarm of ANY category
+      (the image loads every category), so in the Power tab a site showed the time of an older,
+      hidden Other alarm. Now `withShownTime(rows, shownCategories(columns, tab))` = oldest alarm
+      of the tab's category, else of the shown Down / Power / Other columns (`firstTime` per
+      category on SiteImageRow); the footer / summary alarm count uses the same categories.)
+      (2026-10-28, user request: **floating "Send" button** on /alarms and /cleared, bottom-right
+      like a WhatsApp chat button — `components/send-panel.tsx`, mounted once in the (app) layout
+      (shown by pathname; main got pb-24 so it never covers the pager). Only for office admins
+      (ADMIN) and operators (user request 2026-10-29; viewers and the super admin do not see it). Panel with tabs **Mail**
+      (bullets + the latest 200 active alarm mails) and **Update** (bullets + the latest 200 Clear
+      mails, last 24 h); search, click a subject to add it as a bullet. Office name on top
+      (`officeTitle()`), Enter adds a bullet, Backspace on an empty one removes it; drafts per tab
+      in localStorage `send.mail` / `send.update`. Message = `updateText()` ("*Office* · time",
+      "• line" each, `packages/core/src/sendUpdate.ts`). Copy (clipboard, execCommand fallback on
+      http) and Share: `whatsappTextUrl()` pre-fills the text for a number or the chat list; a
+      group link cannot carry text, so it is copied first and the group opens; on a phone with no
+      chat set, the share sheet. Chat saved per user in `uiPrefs.alarms.sendChat`. Assumption:
+      the user did not describe the Mail tab — built as the alarm-mail twin of Update.
+      Same day (user request): the window is a centred modal (Esc / backdrop close; the round
+      button hides while it is open). Message area = office name · **Teams** bullets (teams only)
+      · **Notes** textarea · the added **Clears** (Mail tab: Alarms) as plain lines, removable;
+      the "Latest clears" search list sits at the bottom. `updateText(title, time, {bullets,
+      notes, mails})`: head, "• team" lines, notes, empty line, one subject per line. Drafts are
+      {bullets, notes, mails} (the first list-only draft becomes bullets).
+      WhatsApp message tidy-up (user screenshot: English lines right-aligned on an Arabic phone):
+      every line starts with U+200E (left-to-right mark) — WhatsApp takes a line's direction from
+      its first strong letter, and "•" / "-" have none. Blocks split by empty lines: head
+      ("*Office* · 28 Oct, 20:01", no seconds), "*Teams*" + "- team" (WhatsApp list syntax),
+      notes, "*Cleared (n)*" (Mail tab "*Alarms (n)*") + "✅ / 🔴 NAME — SHORT_SITE" via
+      `mailLine()` (no CLEARED_ / S_D_N_ / D_S_ prefix, `shortSite()`, no subject time).
+      List below the message (user request): a category select box (All categories / Down /
+      Power / Other, with counts; was chips) next to the search; only the newest 20 show until you search, then every match
+      (the panel loads the newest 500 of the tab — Clears: last 24 h).)
 - [x] REST API moved to NestJS (2026-10-21, user request, for React Native): see "NestJS API" below.
 - [ ] Phase 8 — full compose, backups, LAN access, 24h parallel run, RUNBOOK
       (RUNBOOK.md started with the hourly section; `apps/web/Dockerfile` exists but `web` is
       not in docker-compose.yml yet — it must mount token.json + credentials.json read-only)
 - [ ] Phase 9 — PWA + web push
+      (2026-10-29, user request "add progressive app" — **installable app done, web push not yet**):
+      `app/manifest.ts` (/manifest.webmanifest: name, start_url /alarms, standalone, navy theme,
+      icons any + maskable, shortcuts Alarms / Cleared / Dashboard); icons in `public/icons/`
+      made by `scripts/make-icons.mjs` (the sidebar logo: Lucide radio tower on the teal tile;
+      re-run after a design change); `public/sw.js` hand-written instead of Serwist (no new
+      dependency): pages network-first with the last good copy offline, else `/offline.html`;
+      `/_next/static` cache-first except in dev (`/sw.js?dev=1`); /api and non-GET never touched.
+      `components/pwa.tsx`: `PwaRegister` (root layout) registers it in a secure context and
+      keeps the install offer → "Install app" in the sidebar; sign-out clears the cached pages
+      (`clearOfflinePages`). Root layout: theme-color, apple-web-app, icons. middleware lets
+      manifest / sw.js / offline.html / icons through without sign-in; web Dockerfile copies
+      `public/`. Verified on localhost:3000: worker activated and controlling, offline shell
+      cached. **Only HTTPS or localhost** can install / run a service worker — phones on
+      http://<LAN IP> cannot until Phase 10 (or Chrome's "insecure origins treated as secure" flag).
 - [ ] Phase 10 — Cloudflare Tunnel remote access
+      (2026-10-29, user choice "quick test tunnel" so phones can install the app: a Cloudflare
+      **quick tunnel**, no account — `docker run -d --name alarm-quick-tunnel
+      --add-host=host.docker.internal:host-gateway cloudflare/cloudflared:2024.12.2 tunnel
+      --no-autoupdate --url http://host.docker.internal:3400`; its random
+      https://….trycloudflare.com address (in `docker logs alarm-quick-tunnel`) changes on every
+      start and must be put in the `web-tunnel` launch config's NEXTAUTH_URL (next dev on :3400,
+      API on :4100). Reachable from the internet, protected only by the app login. Stop:
+      `docker rm -f alarm-quick-tunnel` + stop `web-tunnel`. The permanent named tunnel (token
+      in .env, cloudflared service in compose) is still to do.)
 - [ ] Phase 11 — Expo mobile app (optional)
 - [x] Phase 12 — Hourly reports (stateless, §14 "As built"): /hourly, /hourly/[gmailId],
       /hourly/compare, /settings/site-master. Verified 2026-10-13: vitest 151 tests incl. 7
@@ -572,8 +756,7 @@ Notes:
   `apps/web/.env.local` (gitignored, generated from `.env`) points the dev server at it.
 - API: every route except `/api/health` and `/api/auth/*` requires a session (401 JSON);
   `/api/rules` and `/api/reprocess` require ADMIN (403). Pages are guarded by `middleware.ts`
-  (redirect to /login). `PUT /api/rules` replaces all rules and re-classifies existing alarms.
-  MTTR = avg durationMin of EMAIL clears only (AUTO_SUPERSEDED excluded), last 30 days.
+  (redirect to /login). `PUT /api/rules` replaces all rules and re-classifies existing alarms.  MTTR = avg durationMin of EMAIL clears only (AUTO_SUPERSEDED excluded), last 30 days.
   `/api/health` is 200 whenever the DB answers (worker staleness reported in the body).
 - Classification gap seen on real data: OTHER dominates because seed rules don't match
   `BCCH MISSING`, `WCDMA BASE STATION OUT OF USE`, `NE3SWS AGENT NOT RESPONDING…` — ask the
@@ -627,12 +810,29 @@ Notes:
   category / name) OR siteCode ∈ exceptSites OR site ∈ exceptSites; the daily chart's raw SQL
   (`alarmScopeSql()` → `admin`, `mine`) does the same with `upper(site)`. Edited under "Except
   these sites" in each hide/show section of Settings → Display alarms.
+  **2026-10-27 (user request): exceptions are PER ALARM NAME** — `siteExceptions: {name: sites[]}`
+  replaces the global `exceptSites` (old values are converted onto every hidden name by
+  `normalizeDisplayFilter`). At its sites a name does the OPPOSITE: hidden → still shows, shown →
+  hidden (`displayHides` = typeHidden XOR excepted). Prisma `visibleWhere()` builds it per name
+  (null-safe `siteNotIn`); the daily chart SQL compares `typeHidden = inExceptions` with the
+  exceptions passed as JSON. The Categories part is gone from the editor (hiddenCategories still
+  applies; an old value shows an amber "Show them again" note). Each name row has a "Sites" button
+  that opens its site list; the list filter is All / "Changed (n)" (hidden or with exceptions).
 - **Display alarms page (2026-10-25):** a gap accordion (`components/settings/accordion.tsx`
   `AccordionSection`, shared with the hourly settings): View · Mail cards · Table site details ·
   Table rows · Table columns · my hidden types · hidden for everyone. Mail cards has its own
   section with **"Group alarms of the same site"** (`uiPrefs.alarms.mailGroupBySite`): on the
   current page, alarms with the same site code (else site) fold into one card — site, tags,
   "N alarms", categories, the alarm names, newest age — that opens to their mail cards.
+  2026-10-27 redesign (user request): the View is a two-card picker (Mail cards / Table) above the
+  accordion; groups "View" · "Layout" · "Hidden alarm types"; the three table sections are ONE
+  "Table" section (Site details · One row per site code · Columns); the section of the chosen view
+  is marked "In use", listed first and open. Mail cards = toggles left, sticky preview right (lg).
+  Hidden-types editor: Categories → Alarm names (All / "Hidden only (n)" filter) → Except sites.
+  `AccordionSection` got `icon` and `badge` props.
+  Later the same day (user request): one section open at a time (`AccordionGroup` in
+  `components/settings/accordion.tsx`, sections told apart by title; the hourly settings page
+  does not use it) and no previews (mail card / site cell previews removed).
 - After a schema change, RESTART `next dev` — a running dev server keeps the old Prisma client
   in memory ("Unknown field … on model SystemStatus").
 - On Windows, `prisma generate` fails with EPERM while `next dev` holds the query-engine DLL —
@@ -657,6 +857,21 @@ Notes:
     Kept by `@alarm/db resolveOffices()`: worker after each batch (new rows) and after reprocess,
     Site Master import/edit (whole table), office label list change. Orphan clears the same way.
     Import response lists `unmappedOffices` (Site Master names without a label).
+  - **HOTLINE role (2026-10-29, user request):** VIEWER < OPERATOR < ADMIN < HOTLINE <
+    SUPER_ADMIN (migration `20261029000000_hotline_role`). Has the super admin's powers — every
+    office + office view (`seesAllOffices()` in roles.ts, used by scopeOfficeOf, the /alarms and
+    hourly Office filters, Site Master manage scope), reprocess (`@Roles("HOTLINE")` on
+    PUT settings/office + POST reprocess), hourly processing, its own WhatsApp sender — but NOT
+    the settings for everyone: classification rules, hidden-for-everyone types, Gmail, value
+    normalization (all SUPER_ADMIN by rank), hourly settings (`hourlyEditKey` → null) and Users &
+    roles (`@NoHotline()` guard marker, 403 "Not available to hotline accounts"). Display alarms
+    = its own personal hidden types only. Only the super admin creates hotline accounts (no
+    office, like the super admin). No Send panel (that stays ADMIN / OPERATOR). **Pages:** only
+    Alarms, Cleared, Dashboard and Settings (user request) — `apps/web/lib/pages.ts`
+    `canSeePage()` filters the sidebar and `components/page-gate.tsx` (wraps every (app) page in
+    the layout) sends /hourly… and /site-master back to /alarms. The APIs behind them are not
+    blocked.
+    `apps/api/src/test/hotline.integration.test.ts`.
   - Roles: VIEWER < OPERATOR < ADMIN (office admin) < SUPER_ADMIN. `users.office` = the office a
     viewer/operator/admin belongs to (sees ONLY it; none = sees nothing); for the super admin it
     is the office being viewed (null = all offices, picked in /settings "Office view").
@@ -678,6 +893,38 @@ Notes:
   publish the app (or set User type = Internal) so the worker doesn't lose access weekly.
 - samples/ is gitignored (real network data). 300 msgs = only ~40 min of mail; a second
   subject format exists ("Huawei Alram Notify New alarm: ...") — handle in Phase 2.
+- **WhatsApp sender (2026-10-28, user request "Plan auto-sending" → "Yes, build it"):** new
+  service `apps/whatsapp` (Baileys 7.0.0-rc14 — 6.7.x pulls libsignal from git; node:http on :4300,
+  internal, `X-Internal-Token` = WHATSAPP_TOKEN || NEXTAUTH_SECRET; session in WHATSAPP_SESSION_DIR,
+  default repo `data/whatsapp`, Docker volume `whatsapp`). Pure checks in `src/plan.ts` (chatRef,
+  planSend: ≤ 30 PNGs of ≤ 5 MB, text ≤ 4000, text first) and 1.5 s between messages, one send at a
+  time (`sender.ts`); a log-out wipes the session and shows a new QR; group links resolved once via
+  groupGetInviteInfo. API `modules/whatsapp.controller.ts`: GET /api/whatsapp/status (everyone; QR
+  super admin only; `canSend` = operator+), POST /logout (super admin), POST /send (operator+, chat
+  must be one of the user's saved chats — `savedChats()` over uiPrefs sendChat / image.shareAll /
+  shareOffices), GET /sends (super admin). Table `whatsapp_sends` (migration
+  `20261028000000_whatsapp_sends`: who, chat, chatName, texts, images, ok, error). Web:
+  /settings/whatsapp ("WhatsApp sender", Administration, super admin: QR polled every 3 s, status,
+  Log out, last sends); `components/whatsapp.tsx` (`useWhatsAppSender`, `sendViaWhatsApp`). When
+  linked: Export image "Send to N chats" posts every chat its images in one click (chips show
+  sending / ✓ / ✗ error); the Send panel's Share posts the text to its saved chat. Not linked →
+  the copy / paste flow. Verified: 3 plan tests, 4 API integration tests with a fake sender, and a
+  live start that reached WhatsApp and produced a QR; no real phone linked yet. RUNBOOK section.
+  **Per-user numbers (2026-10-29, user request):** every account except viewers links ITS OWN
+  number. Service: `SenderPool` (`src/pool.ts`) — one `WhatsAppSender` per users.id in
+  `<session root>/users/<id>`; every call carries `?user=` (digits only, else 400); boot starts
+  the linked ones; an unlinked account starts (shows a QR) only on `/status?start=1` (the
+  settings page) and stops when the QR expires; a log-out wipes that account's folder. The
+  first version's single session (files in the root) is moved to the first SUPER_ADMIN whose
+  status call has `adopt=1` (done: user 1, "work" +201279752435). API: status per user (viewers
+  get "disconnected" without asking the service), logout + send + sends for OPERATOR+ on their
+  own session (super admin's sends list = everyone's). Web: Settings → **WhatsApp sender** is in
+  the Personal group for operator / admin / super admin; `useWhatsAppSender()` shares one
+  status request per page (60 s cache, `resetWhatsAppStatus()` after link / log-out).
+  **WhatsApp UI only while the user's number is linked:** the image windows' Send button and
+  result chips (else just Download — the old copy / paste WhatsApp flow is gone from
+  `ImageExportDialog`), the Share settings tab of both image settings windows, the floating
+  Send panel button (also still ADMIN / OPERATOR only) and the Site Master "WhatsApp" button.
 - **NestJS API (2026-10-21, user request: REST API for a React Native app, no behaviour change):**
   - `apps/api` serves every former Route Handler at the SAME path, method, status code and JSON
     shape (errors `{error, details?}` via `ErrorFilter`). Controllers in `src/modules/*`, the old

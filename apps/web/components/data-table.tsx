@@ -267,7 +267,7 @@ export function Pager({
       {pages > 1 && (
         <div className="flex items-center gap-1">
           <button
-            className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-40"
+            className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 hover:bg-slate-100/70 disabled:opacity-40"
             disabled={page <= 1}
             onClick={() => onPage(page - 1)}
           >
@@ -277,7 +277,7 @@ export function Pager({
             {page} / {pages}
           </span>
           <button
-            className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-40"
+            className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 hover:bg-slate-100/70 disabled:opacity-40"
             disabled={page >= pages}
             onClick={() => onPage(page + 1)}
           >

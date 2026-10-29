@@ -20,6 +20,7 @@ export interface AuthUser {
 
 const FORBIDDEN: Partial<Record<Role, string>> = {
   ADMIN: "Admin only",
+  HOTLINE: "Hotline or super admin only",
   SUPER_ADMIN: "Super admin only",
 };
 

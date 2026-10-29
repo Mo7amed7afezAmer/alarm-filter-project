@@ -32,6 +32,9 @@ enum Role {
   OPERATOR
   /// Office admin: manages the viewers/operators of their own office; sees that office only.
   ADMIN
+  /// Every office and the super admin's powers except the settings for everyone
+  /// (classification, hidden-for-everyone types, hourly settings, users, Gmail, normalization).
+  HOTLINE
   /// Every office, every setting (Gmail, rules, Site Master, reprocess) and every user.
   SUPER_ADMIN
 }
@@ -237,6 +240,19 @@ model HourlyNormalization {
   @@map("hourly_normalizations")
 }
 
+/// Hourly report settings shared per office (2026-10-25): alarms, columns, images, sort and
+/// colours (`HourlyPrefs` in @alarm/core). `key` = office label ("DN/Tanta"), or "*" = the
+/// default for offices without their own (edited by the super admin). Office admins edit their
+/// office's row; viewers / operators only read it.
+model HourlySettings {
+  key       String   @id
+  prefs     Json
+  updatedAt DateTime @updatedAt
+  updatedBy Int?
+
+  @@map("hourly_settings")
+}
+
 /// Alarm names seen in processed hourly reports — the hide lists of Settings → Hourly reports
 /// (2026-10-25). Updated on every processing; nothing else about the rows is stored.
 model HourlyAlarmName {
@@ -254,4 +270,24 @@ model HourlyAlarmName {
   alarmTexts String[] @default([])
 
   @@map("hourly_alarm_names")
+}
+
+/// One WhatsApp send from the alarm pages through the sender service (2026-10-28): who sent
+/// what to which saved chat, and whether it went out. Nothing of the images is kept.
+model WhatsappSend {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  userEmail String
+  /// The saved chat: digits of a number or the group invite link.
+  chat      String
+  /// "+20…" or the group's name, as WhatsApp reported it.
+  chatName  String?
+  texts     Int      @default(0)
+  images    Int      @default(0)
+  ok        Boolean
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("whatsapp_sends")
 }

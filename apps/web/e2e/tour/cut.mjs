@@ -4,6 +4,7 @@
 // while the player jumps over each cut. ffmpeg then only remuxes (-c copy) to add the duration
 // and seek index that MediaRecorder files lack.
 //   node e2e/tour/cut.mjs   → docs/video/alarm-filter-tour.webm (raw kept as *-raw.webm)
+//   NAME=alarm-filter-roles node e2e/tour/cut.mjs   → the roles video (tour-roles.mjs)
 import { chromium } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -17,11 +18,12 @@ const pwDir = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), ".ca
 const ffDir = readdirSync(pwDir).filter((d) => d.startsWith("ffmpeg-")).sort().pop();
 const ffmpeg = path.join(pwDir, ffDir, process.platform === "win32" ? "ffmpeg-win64.exe" : "ffmpeg-linux");
 
-const final = path.join(dir, "alarm-filter-tour.webm");
-const raw = path.join(dir, "alarm-filter-tour-raw.webm");
+const NAME = process.env.NAME ?? "alarm-filter-tour";
+const final = path.join(dir, `${NAME}.webm`);
+const raw = path.join(dir, `${NAME}-raw.webm`);
 const tmp = path.join(dir, ".cut.webm");
 if (!existsSync(raw)) renameSync(final, raw);
-const cuts = JSON.parse(readFileSync(path.join(dir, "cuts.json"), "utf8"))
+const cuts = JSON.parse(readFileSync(path.join(dir, NAME === "alarm-filter-tour" ? "cuts.json" : `${NAME}-cuts.json`), "utf8"))
   .filter(([a, b]) => b - a > 0.5)
   .sort((x, y) => x[0] - y[0]);
 console.log(`${cuts.length} cuts, ${cuts.reduce((s, [a, b]) => s + b - a, 0).toFixed(0)} s removed`);
@@ -46,10 +48,10 @@ const progress = setInterval(async () => {
 }, 30_000);
 const [download] = await Promise.all([
   page.waitForEvent("download"),
-  page.evaluate(async (cuts) => {
+  page.evaluate(async ([cuts, name]) => {
     const v = document.getElementById("v");
     // a blob URL is same-origin and fully seekable (the fake route has no Range support)
-    v.src = URL.createObjectURL(await (await fetch("alarm-filter-tour-raw.webm")).blob());
+    v.src = URL.createObjectURL(await (await fetch(name + "-raw.webm")).blob());
     await new Promise((r) => (v.readyState >= 1 ? r() : v.addEventListener("loadedmetadata", r, { once: true })));
     const mime = "video/webm;codecs=vp8";
     const rec = new MediaRecorder(v.captureStream(), { mimeType: mime, videoBitsPerSecond: 700_000 });
@@ -83,7 +85,7 @@ const [download] = await Promise.all([
     a.href = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
     a.download = "tour.webm";
     a.click();
-  }, cuts),
+  }, [cuts, NAME]),
 ]);
 clearInterval(progress);
 await download.saveAs(tmp);

@@ -8,6 +8,7 @@ import {
   officeGroups,
   officeInScope,
   scopeOfficeOf,
+  seesAllOffices,
   type Account,
 } from "./roles.js";
 
@@ -79,5 +80,27 @@ describe("roles", () => {
     expect(checkAssignment(superAdmin, "ADMIN", TANTA)).toEqual({ office: TANTA });
     expect(checkAssignment(superAdmin, "VIEWER", null)).toHaveProperty("error");
     expect(checkAssignment(superAdmin, "SUPER_ADMIN", null)).toEqual({ office: null });
+  });
+});
+
+describe("HOTLINE", () => {
+  const hotline = { id: 9, role: "HOTLINE" as const, office: null };
+  const superAdmin = { id: 1, role: "SUPER_ADMIN" as const, office: null };
+  it("ranks above office admins, below the super admin", () => {
+    expect(hasRole("HOTLINE", "ADMIN")).toBe(true);
+    expect(hasRole("HOTLINE", "HOTLINE")).toBe(true);
+    expect(hasRole("HOTLINE", "SUPER_ADMIN")).toBe(false);
+    expect(hasRole("SUPER_ADMIN", "HOTLINE")).toBe(true);
+  });
+  it("sees every office, or the one it picked, like the super admin", () => {
+    expect(seesAllOffices("HOTLINE")).toBe(true);
+    expect(scopeOfficeOf(hotline)).toBeNull();
+    expect(scopeOfficeOf({ ...hotline, office: "DN/Tanta" })).toBe("DN/Tanta");
+  });
+  it("manages no users; only the super admin can give the role", () => {
+    expect(assignableRoles(hotline)).toEqual([]);
+    expect(canManage(hotline, { id: 2, role: "VIEWER", office: "DN/Tanta" })).toBe(false);
+    expect(assignableRoles(superAdmin)).toContain("HOTLINE");
+    expect(checkAssignment(superAdmin, "HOTLINE", undefined)).toEqual({ office: null });
   });
 });

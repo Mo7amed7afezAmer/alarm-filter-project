@@ -9,6 +9,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/core/package.json packages/core/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
+COPY apps/whatsapp/package.json apps/whatsapp/
 COPY apps/worker/package.json apps/worker/
 RUN pnpm install --frozen-lockfile --filter @alarm/db
 

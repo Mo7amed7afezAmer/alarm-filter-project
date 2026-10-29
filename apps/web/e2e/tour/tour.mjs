@@ -5,6 +5,8 @@
 //   node e2e/tour/tour.mjs            → docs/video/alarm-filter-tour.webm
 // The account's office view is switched to "all offices" for the tour (the hourly fixture rows
 // are Kafr El Dawar) and restored afterwards; UI prefs touched by the tour are restored too.
+// The video is recorded in the Dark theme by default (TOUR_THEME=blue|dark|light overrides);
+// the account's own theme comes back with its other prefs at the end.
 import { chromium } from "@playwright/test";
 import { mkdirSync, readFileSync, renameSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -23,6 +25,7 @@ const RAW = path.join(OUT, ".raw");
 const W = 1440;
 const H = 900;
 const SPEED = Number(process.env.TOUR_SPEED ?? 1); // < 1 = faster (for dry runs)
+const THEME = ["blue", "dark", "light"].includes(process.env.TOUR_THEME) ? process.env.TOUR_THEME : "dark"; // the theme the video is recorded in (TOUR_THEME=blue|dark|light)
 
 // ---------- overlay injected into every document ----------
 const overlay = () => {
@@ -233,7 +236,9 @@ async function main() {
   const originalOffice = cur && "office" in cur ? cur.office : "DN/Damanhour";
   await api("PUT", "/api/settings/office", { office: null });
   const prefsBefore = await (await api("GET", "/api/me/ui-prefs")).json().catch(() => null);
-  log("office was", originalOffice);
+  // record in THEME (the next go() is a full page load, so the root layout picks it up)
+  if (prefsBefore?.prefs) await api("PUT", "/api/me/ui-prefs", { ...prefsBefore.prefs, theme: THEME }).catch(() => {});
+  log("office was", originalOffice, "· theme", THEME);
 
   try {
     // ================= 2. Navigation =================
@@ -413,9 +418,12 @@ async function main() {
     await spot(page.locator("main nav, main aside").first(), "<b>Settings</b> ليها قائمة أقسام — كل مستخدم بيشوف الأقسام المسموح له بيها حسب الـ<b>role</b>", 5500);
     await safe("theme", async () => {
       await spot(page.getByRole("button", { name: /Blue/ }).first().locator(".."), "<b>General</b>: اختيار الثيم — <b>Blue</b> (الافتراضي) أو <b>Dark</b> أو <b>Light</b>", 4500);
-      await click(page.getByRole("button", { name: /^Light/ }).first(), 2500);
-      await click(page.getByRole("button", { name: /^Dark/ }).first(), 2500);
-      await click(page.getByRole("button", { name: /^Blue/ }).first(), 1500);
+      // show the other two themes, then come back to the one the video is recorded in
+      const themeButton = { blue: /^Blue/, dark: /^Dark/, light: /^Light/ };
+      for (const t of ["light", "dark", "blue"].filter((t) => t !== THEME)) {
+        await click(page.getByRole("button", { name: themeButton[t] }).first(), 2500);
+      }
+      await click(page.getByRole("button", { name: themeButton[THEME] }).first(), 1500);
     });
 
     await goSide("Notifications", "/settings/notifications");

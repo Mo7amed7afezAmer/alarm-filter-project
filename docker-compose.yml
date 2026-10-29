@@ -85,6 +85,9 @@ services:
       HOURLY_MAX_RAR_MB: ${HOURLY_MAX_RAR_MB:-25}
       HOURLY_MAX_EXTRACT_MB: ${HOURLY_MAX_EXTRACT_MB:-100}
       HOURLY_CACHE_MIN: ${HOURLY_CACHE_MIN:-30}
+      # WhatsApp sender (Settings → WhatsApp); the token defaults to NEXTAUTH_SECRET on both sides
+      WHATSAPP_URL: http://whatsapp:4300
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
       GOOGLE_TOKEN_PATH: /app/secrets/token.json
       GOOGLE_CREDENTIALS_PATH: /app/secrets/credentials.json
     volumes:
@@ -97,8 +100,29 @@ services:
         condition: service_completed_successfully
     networks: [internal]
 
+  whatsapp:
+    # Posts the alarm images / updates from a linked WhatsApp number (QR in Settings → WhatsApp).
+    # Internal only: the api calls it on :4300. The login stays in the `whatsapp` volume.
+    build:
+      context: .
+      dockerfile: apps/whatsapp/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+    volumes:
+      - whatsapp:/app/session
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4300/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks: [internal]
+
 volumes:
   pgdata:
+  whatsapp:
 
 networks:
   internal:

@@ -150,6 +150,24 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     expect(texts.every((t: string) => t.trim().length > 0)).toBe(true);
     expect(r.body.meta.collectReports).toBe(24);
 
+    // anyone can add a name by hand (upper-cased, spaces collapsed); adding it again is a no-op
+    const add = (body: unknown) =>
+      call("/api/hourly-alarm-names", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      const made = await add({ name: "  zz test   alarm ", section: "ENV" });
+      expect(made.status).toBe(201);
+      expect(made.body.data).toMatchObject({ name: "ZZ TEST ALARM", section: "ENV", category: "OTHER", lastCount: 0 });
+      expect((await add({ name: "ZZ TEST ALARM", section: "DOWN" })).status).toBe(200);
+      expect((await add({ name: "x", section: "NOPE" })).status).toBe(400);
+      expect((await add({ name: " ", section: "DOWN" })).status).toBe(400);
+    } finally {
+      await prisma.hourlyAlarmName.deleteMany({ where: { name: "ZZ TEST ALARM" } });
+    }
+
     expect((await call("/api/hourly-alarm-names/collect", { method: "POST" })).status).toBe(403);
     as("OPERATOR");
     const c = await call("/api/hourly-alarm-names/collect", { method: "POST" });
@@ -216,27 +234,41 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
     expect(bad.status).toBe(400);
   });
 
-  it("export follows the user's hourly settings: hidden types, column order, sheets per group", async () => {
-    as("VIEWER");
-    const me = await call("/api/me/ui-prefs");
-    const prefs = me.body.prefs;
+  it("hourly settings are shared per office: admins edit, everyone in the office gets them", async () => {
     const put = (hourly: unknown) =>
-      call("/api/me/ui-prefs", {
+      call("/api/hourly-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...prefs, hourly }),
+        body: JSON.stringify(hourly),
       });
+    // viewers read (and cannot change) the settings their pages use
+    as("VIEWER");
+    const mine = await call("/api/hourly-settings");
+    expect(mine.status).toBe(200);
+    expect(mine.body.meta.editKey).toBeNull();
+    expect((await put(mine.body.data)).status).toBe(403);
+
+    // the office admin saves their office's own settings …
+    as("ADMIN");
+    const before = await call("/api/hourly-settings");
+    expect(before.body.meta.editKey).toBe(OFFICE);
     try {
-      expect(
-        (
-          await put({
-            ...prefs.hourly,
-            hiddenCategories: ["OTHER"],
-            tableColumns: ["siteNo", "code", "alarmTime"],
-            split: { mode: "downVsRest", byOffice: false },
-          })
-        ).status,
-      ).toBe(200);
+      const saved = await put({
+        ...before.body.data,
+        hiddenCategories: ["OTHER"],
+        tableColumns: ["siteNo", "code", "alarmTime"],
+        split: { mode: "downVsRest", byOffice: false },
+      });
+      expect(saved.status).toBe(200);
+      expect(saved.body.meta).toMatchObject({ source: OFFICE, editKey: OFFICE, own: true });
+
+      // … and the viewer of the same office gets them (Excel export too)
+      as("VIEWER");
+      expect((await call("/api/hourly-settings")).body.data.tableColumns).toEqual([
+        "siteNo",
+        "code",
+        "alarmTime",
+      ]);
       const r = await call(report("export"));
       expect(r.status).toBe(200);
       const wb = new ExcelJS.Workbook();
@@ -246,7 +278,11 @@ describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
       expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual(["Site #", "Site Code", "Alarm Time"]);
       expect(ws.getRow(2).getCell(1).value).toBe("1");
     } finally {
-      await put(prefs.hourly);
+      // back to the default: the office row is removed
+      as("ADMIN");
+      const reset = await call("/api/hourly-settings", { method: "DELETE" });
+      expect(reset.status).toBe(200);
+      expect(reset.body.meta.own).toBe(false);
     }
   });
 

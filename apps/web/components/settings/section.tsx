@@ -1,11 +1,49 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { Info, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+
+/** Info note with a close button; closing hides it until the page is loaded again. */
+export function Notice({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  if (!open) return null;
+  return (
+    <div
+      role="note"
+      className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800"
+    >
+      <Info className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0 flex-1">{children}</div>
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => setOpen(false)}
+        className="-mr-1 rounded-sm p-0.5 text-sky-700 hover:bg-sky-100"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
 
 /** Title of one /settings section (the page title "Settings" is in the layout). */
-export function SectionHeader({ title, subtitle }: { title: string; subtitle?: ReactNode }) {
+export function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  /** Controls on the right of the title (below it on narrow screens). */
+  action?: ReactNode;
+}) {
   return (
-    <div>
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+      </div>
+      {action}
     </div>
   );
 }

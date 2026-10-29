@@ -1,6 +1,6 @@
 // Hourly reports (§14, stateless): list from Gmail, process into the in-process cache, read rows,
 // export, compare. Plus the normalization rules applied while processing.
-import { Controller, Get, HttpCode, Param, Post, Put, Req, Res } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Param, Post, Put, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import {
@@ -10,7 +10,7 @@ import {
   hourlyCellFill,
   hourlySortFor,
   NORMALIZED_FIELDS,
-  normalizeUiPrefs,
+  normalizeHourlyPrefs,
   parseHourlySort,
   sortHourlyRows,
   splitHourlyRows,
@@ -18,11 +18,18 @@ import {
   wallClockOf,
 } from "@alarm/core";
 import { buildHourlyXlsx } from "@alarm/core/hourly";
-import { prisma } from "@alarm/db";
+import {
+  getHourlySettings,
+  HOURLY_DEFAULT_KEY,
+  hourlyEditKey,
+  prisma,
+  type Prisma,
+} from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { dateParam, HttpError, parseBody, parseQuery, searchParams } from "../common/http.js";
 import { CurrentUser, Roles } from "../common/nest.js";
 import { hourlySource } from "../lib/gmail.js";
+import { getOffice } from "../lib/office.js";
 import {
   checkGmailId,
   collectState,
@@ -48,6 +55,8 @@ const listQuery = z.object({
     .transform((s) => new Date(Date.parse(s) + (/^\d{4}-\d{2}-\d{2}$/.test(s) ? DAY : 0)))
     .optional(),
   page: z.coerce.number().int().min(1).max(200).default(1),
+  /** Reports per page (the Hourly Alarms list asks for 10). */
+  pageSize: z.coerce.number().int().min(1).max(50).default(PAGE_SIZE),
 });
 
 const paging = z.object({
@@ -64,16 +73,74 @@ const normalizationRule = z.object({
 const listNormalizations = () =>
   prisma.hourlyNormalization.findMany({ orderBy: [{ field: "asc" }, { from: "asc" }] });
 
+/** The settings row this user edits (null = read-only). */
+async function editKeyFor(user: AuthUser): Promise<string | null> {
+  return hourlyEditKey(user, await getOffice(user.id));
+}
+
+/** Settings the user's hourly pages use (their office's, else the default) + what they may edit. */
+async function settingsView(user: AuthUser) {
+  const [resolved, editKey] = await Promise.all([
+    getHourlySettings(prisma, await getOffice(user.id)),
+    editKeyFor(user),
+  ]);
+  return {
+    data: resolved.prefs,
+    meta: {
+      /** Row the settings came from: an office label, "*" (default) or null (built-in). */
+      source: resolved.source,
+      /** Row a save writes (null = read-only). */
+      editKey,
+      /** The edited office has its own row (else it uses the default). */
+      own: !!editKey && resolved.source === editKey,
+    },
+  };
+}
+
 @Controller()
 export class HourlyController {
+  /** Hourly report settings shared per office (Settings → Alarms, images & colours): every user
+   *  reads the ones their pages use; office admins / the super admin can edit them. */
+  @Get("hourly-settings")
+  hourlySettings(@CurrentUser() user: AuthUser) {
+    return settingsView(user);
+  }
+
+  /** Office admin: their office's settings; super admin: the viewed office's, or the default. */
+  @Put("hourly-settings")
+  @Roles("ADMIN")
+  async putHourlySettings(@Req() req: Request, @CurrentUser() user: AuthUser) {
+    const key = await editKeyFor(user);
+    if (!key) throw new HttpError(403, "Your account has no office to set hourly settings for");
+    // shapes are checked by normalizeHourlyPrefs (unknown values fall back to the defaults)
+    const prefs = normalizeHourlyPrefs(await parseBody(req, z.record(z.unknown())));
+    const json = prefs as unknown as Prisma.InputJsonValue;
+    await prisma.hourlySettings.upsert({
+      where: { key },
+      create: { key, prefs: json, updatedBy: user.id },
+      update: { prefs: json, updatedBy: user.id },
+    });
+    return settingsView(user);
+  }
+
+  /** An office goes back to the default settings ("*" itself cannot be removed). */
+  @Delete("hourly-settings")
+  @Roles("ADMIN")
+  async resetHourlySettings(@CurrentUser() user: AuthUser) {
+    const key = await editKeyFor(user);
+    if (!key) throw new HttpError(403, "Your account has no office to set hourly settings for");
+    if (key !== HOURLY_DEFAULT_KEY) await prisma.hourlySettings.deleteMany({ where: { key } });
+    return settingsView(user);
+  }
+
   /** "Hourly Update" mails from Gmail (no download), each with its processing status. */
   @Get("hourly-reports")
   async list(@Req() req: Request) {
-    const { from, to, page } = parseQuery(req, listQuery);
-    const { reports, hasMore } = await hourlySource().list({ from, to, page, pageSize: PAGE_SIZE });
+    const { from, to, page, pageSize } = parseQuery(req, listQuery);
+    const { reports, hasMore } = await hourlySource().list({ from, to, page, pageSize });
     return {
       data: reports.map((r) => ({ ...r, ...hourlyCache.status(r.gmailId) })),
-      meta: { page, pageSize: PAGE_SIZE, hasMore, cached: hourlyCache.size },
+      meta: { page, pageSize, hasMore, cached: hourlyCache.size },
     };
   }
 
@@ -165,7 +232,7 @@ export class HourlyController {
   }
 
   /** ?<same filters>&sort&columns=a,b,c → .xlsx of the visible table: chosen columns in order.
-   *  The user's hourly settings (users.uiPrefs.hourly) apply: hidden alarm types, default sort,
+   *  The office's hourly settings (hourly_settings) apply: hidden alarm types, default sort,
    *  one sheet per category / office group, age colors over the office colors. */
   @Get("hourly-reports/:gmailId/export")
   async export(
@@ -182,9 +249,9 @@ export class HourlyController {
       hourlySource()
         .get(id)
         .catch(() => null),
-      prisma.user.findUnique({ where: { id: user.id }, select: { uiPrefs: true } }),
+      getOffice(user.id).then((scope) => getHourlySettings(prisma, scope)),
     ]);
-    const prefs = normalizeUiPrefs(u?.uiPrefs).hourly;
+    const prefs = u.prefs;
     const columns = sp.getAll("columns").length ? parseColumns(sp) : prefs.tableColumns;
     const sort = parseHourlySort(sp.get("sort"), hourlySortFor(prefs));
 
@@ -216,6 +283,34 @@ export class HourlyController {
       orderBy: [{ section: "asc" }, { name: "asc" }],
     });
     return { data, meta: { collect: collectState(), collectReports: COLLECT_REPORTS } };
+  }
+
+  /** Adds an alarm name by hand (any signed-in user), e.g. one not seen in a report yet, so it can
+   *  be hidden ahead of time. {name, section DOWN | ENV} → the saved row (201), or the existing
+   *  row unchanged when the name is already there (200). */
+  @Post("hourly-alarm-names")
+  async addAlarmName(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { name, section } = await parseBody(
+      req,
+      z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1, "name is required")
+          .max(200)
+          .transform((s) => s.replace(/\s+/g, " ").toUpperCase()),
+        section: z.enum(["DOWN", "ENV"]),
+      }),
+    );
+    const existing = await prisma.hourlyAlarmName.findUnique({ where: { name } });
+    if (existing) {
+      res.status(200); // a POST is 201 by default in Nest
+      return { data: existing };
+    }
+    const data = await prisma.hourlyAlarmName.create({
+      data: { name, section, category: section === "DOWN" ? "DOWN" : "OTHER", lastCount: 0 },
+    });
+    return { data };
   }
 
   /** Reads the newest reports in the background and saves their alarm names (202). */

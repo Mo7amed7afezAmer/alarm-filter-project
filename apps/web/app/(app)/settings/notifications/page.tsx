@@ -178,7 +178,7 @@ export default function NotificationSettings() {
                       "rounded-lg border p-3 text-left transition-colors",
                       on
                         ? "border-brand bg-brand/10 ring-1 ring-brand"
-                        : "border-slate-200 hover:bg-slate-50",
+                        : "border-slate-200 hover:bg-slate-100/70",
                     )}
                   >
                     <div className="flex items-center justify-between">
@@ -288,7 +288,7 @@ export default function NotificationSettings() {
                   <label
                     key={n.name}
                     className={cn(
-                      "flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50",
+                      "flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-100/70",
                       on && "bg-slate-50",
                     )}
                   >

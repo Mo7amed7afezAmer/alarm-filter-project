@@ -127,10 +127,12 @@ export class StatsController {
       FROM alarms
       WHERE "alarmTime" >= ${since}
         AND (${allOffices}::boolean OR office = ${officeExact}::text OR office LIKE ${officePrefix}::text)
-        AND (NOT (category::text = ANY(${admin.hiddenCategories}::text[]) OR "alarmName" = ANY(${admin.hiddenAlarmNames}::text[]))
-             OR "siteCode" = ANY(${admin.exceptSites}::text[]) OR upper(site) = ANY(${admin.exceptSites}::text[]))
-        AND (NOT (category::text = ANY(${mine.hiddenCategories}::text[]) OR "alarmName" = ANY(${mine.hiddenAlarmNames}::text[]))
-             OR "siteCode" = ANY(${mine.exceptSites}::text[]) OR upper(site) = ANY(${mine.exceptSites}::text[]))
+        AND (category::text = ANY(${admin.hiddenCategories}::text[]) OR "alarmName" = ANY(${admin.hiddenAlarmNames}::text[]))
+            = (COALESCE("siteCode" = ANY(ARRAY(SELECT jsonb_array_elements_text(${admin.exceptions}::jsonb -> "alarmName"))), false)
+               OR upper(site) = ANY(ARRAY(SELECT jsonb_array_elements_text(${admin.exceptions}::jsonb -> "alarmName"))))
+        AND (category::text = ANY(${mine.hiddenCategories}::text[]) OR "alarmName" = ANY(${mine.hiddenAlarmNames}::text[]))
+            = (COALESCE("siteCode" = ANY(ARRAY(SELECT jsonb_array_elements_text(${mine.exceptions}::jsonb -> "alarmName"))), false)
+               OR upper(site) = ANY(ARRAY(SELECT jsonb_array_elements_text(${mine.exceptions}::jsonb -> "alarmName"))))
       GROUP BY 1, 2`;
 
     const byDay = new Map(dayList.map((d) => [d, { day: d, DOWN: 0, POWER: 0, OTHER: 0 }]));

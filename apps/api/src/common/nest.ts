@@ -20,21 +20,22 @@ import { HttpError } from "./http.js";
 
 const PUBLIC = "alarm:public";
 const ROLE = "alarm:role";
+const NO_HOTLINE = "alarm:no-hotline";
 
 /** No sign-in needed (health, token, the Gmail OAuth callback that handles auth itself). */
 export const Public = () => SetMetadata(PUBLIC, true);
-/** Minimum role (VIEWER < OPERATOR < ADMIN < SUPER_ADMIN). Without it: any signed-in user. */
+/** Minimum role (VIEWER < OPERATOR < ADMIN < HOTLINE < SUPER_ADMIN). Without it: any user. */
 export const Roles = (role: Role) => SetMetadata(ROLE, role);
+/** Refuses HOTLINE accounts although their rank is high enough (users & roles, …). */
+export const NoHotline = () => SetMetadata(NO_HOTLINE, true);
 
 type AuthedRequest = Request & { user?: AuthUser };
 
-export const CurrentUser = createParamDecorator(
-  (_: unknown, ctx: ExecutionContext): AuthUser => {
-    const user = ctx.switchToHttp().getRequest<AuthedRequest>().user;
-    if (!user) throw new HttpError(401, "Not signed in");
-    return user;
-  },
-);
+export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): AuthUser => {
+  const user = ctx.switchToHttp().getRequest<AuthedRequest>().user;
+  if (!user) throw new HttpError(401, "Not signed in");
+  return user;
+});
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -48,6 +49,11 @@ export class AuthGuard implements CanActivate {
       await authenticate(req),
       this.reflector.getAllAndOverride<Role | undefined>(ROLE, targets),
     );
+    if (
+      req.user.role === "HOTLINE" &&
+      this.reflector.getAllAndOverride<boolean>(NO_HOTLINE, targets)
+    )
+      throw new HttpError(403, "Not available to hotline accounts");
     return true;
   }
 }

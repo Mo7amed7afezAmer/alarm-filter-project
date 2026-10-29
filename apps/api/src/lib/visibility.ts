@@ -24,17 +24,43 @@ export async function displayFilters(userId?: number): Promise<DisplayFilter[]> 
   return Promise.all([getDisplayFilter(), getUserDisplayFilter(userId)]);
 }
 
-/** Prisma condition for one filter: the alarm's type is not hidden, or its site is an exception
- *  (site code or full site name). Null when the filter hides nothing. */
+/** The alarm's site is one of these (site code or full site name). */
+const siteIn = (sites: string[]): Prisma.AlarmWhereInput => ({
+  OR: [{ siteCode: { in: sites } }, { site: { in: sites } }],
+});
+/** NOT siteIn, written out so a null siteCode counts as "not in" (SQL NOT IN drops nulls). */
+const siteNotIn = (sites: string[]): Prisma.AlarmWhereInput => ({
+  AND: [{ OR: [{ siteCode: null }, { siteCode: { notIn: sites } }] }, { site: { notIn: sites } }],
+});
+
+/** Prisma condition for one filter (displayHides): visible = type not hidden, flipped at the
+ *  exception sites of the alarm's name. Null when the filter hides nothing. */
 function visibleWhere(f: DisplayFilter): Prisma.AlarmWhereInput | null {
-  const hidden: Prisma.AlarmWhereInput[] = [];
-  if (f.hiddenCategories.length) hidden.push({ category: { in: f.hiddenCategories } });
-  if (f.hiddenAlarmNames.length) hidden.push({ alarmName: { in: f.hiddenAlarmNames } });
-  if (!hidden.length) return null;
-  const shown: Prisma.AlarmWhereInput[] = [{ NOT: { OR: hidden } }];
-  if (f.exceptSites.length)
-    shown.push({ siteCode: { in: f.exceptSites } }, { site: { in: f.exceptSites } });
-  return { OR: shown };
+  const cats = f.hiddenCategories;
+  const typeHidden: Prisma.AlarmWhereInput[] = [];
+  if (cats.length) typeHidden.push({ category: { in: cats } });
+  if (f.hiddenAlarmNames.length) typeHidden.push({ alarmName: { in: f.hiddenAlarmNames } });
+  const excepted = Object.keys(f.siteExceptions);
+  const and: Prisma.AlarmWhereInput[] = [];
+  // names without exceptions: their type is not hidden
+  if (typeHidden.length)
+    and.push({ OR: [{ alarmName: { in: excepted } }, { NOT: { OR: typeHidden } }] });
+  // names with exceptions: shown name → not at its sites; hidden name → only at its sites
+  for (const name of excepted) {
+    const sites = f.siteExceptions[name]!;
+    const visible: Prisma.AlarmWhereInput = f.hiddenAlarmNames.includes(name)
+      ? siteIn(sites)
+      : cats.length
+        ? {
+            OR: [
+              { AND: [{ category: { notIn: cats } }, siteNotIn(sites)] },
+              { AND: [{ category: { in: cats } }, siteIn(sites)] },
+            ],
+          }
+        : siteNotIn(sites);
+    and.push({ OR: [{ alarmName: { not: name } }, visible] });
+  }
+  return and.length ? { AND: and } : null;
 }
 
 /** Prisma condition: the user's office scope AND not hidden (by the admin or by this user, each
@@ -52,8 +78,8 @@ export async function alarmScope(userId?: number): Promise<Prisma.AlarmWhereInpu
 
 /** Same scope as raw-SQL values for $queryRaw (alarms table):
  *  `allOffices OR office = officeExact OR office LIKE officePrefix` (nulls never match), and per
- *  filter (admin, mine): `NOT (category = ANY(cats) OR alarmName = ANY(names))
- *  OR siteCode = ANY(sites) OR upper(site) = ANY(sites)`. */
+ *  filter (admin, mine): `(category = ANY(cats) OR alarmName = ANY(names)) = (the site is in
+ *  exceptions -> alarmName)` — `exceptions` is the filter's siteExceptions as JSON. */
 export async function alarmScopeSql(userId?: number) {
   const [office, [admin, mine]] = await Promise.all([getOffice(userId), displayFilters(userId)]);
   const group = isOfficeGroup(office);
@@ -61,7 +87,7 @@ export async function alarmScopeSql(userId?: number) {
     allOffices: office === null,
     officeExact: office !== null && !group ? office : null,
     officePrefix: group ? `${office}/%` : null,
-    admin: admin!,
-    mine: mine!,
+    admin: { ...admin!, exceptions: JSON.stringify(admin!.siteExceptions) },
+    mine: { ...mine!, exceptions: JSON.stringify(mine!.siteExceptions) },
   };
 }

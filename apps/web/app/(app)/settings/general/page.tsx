@@ -1,12 +1,14 @@
 "use client";
 
+import { seesAllOffices } from "@alarm/core";
+
 // Settings → General: the theme (everyone) and, for the super admin, the office being viewed and
 // reprocessing (user request 2026-10-25: one page instead of three).
 import { Check } from "lucide-react";
 import type { Theme } from "@alarm/core";
 import { useAppConfig } from "@/components/app-config";
 import { OfficePicker, Reprocess } from "@/components/settings/admin";
-import { SectionHeader } from "@/components/settings/section";
+import { SectionHeader, Toggle } from "@/components/settings/section";
 import { useUiPrefs } from "@/components/ui-prefs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -57,7 +59,8 @@ function ThemePreview({ theme }: { theme: Theme }) {
 export default function GeneralSettings() {
   const { role } = useAppConfig();
   const { prefs, update } = useUiPrefs();
-  const superAdmin = role === "SUPER_ADMIN";
+  // super admin and hotline: office view + reprocess
+  const superAdmin = seesAllOffices(role);
   return (
     <>
       <SectionHeader
@@ -105,6 +108,14 @@ export default function GeneralSettings() {
               </button>
             );
           })}
+        </CardContent>
+        <CardContent className="border-t border-slate-100 pt-4">
+          <Toggle
+            label="Show borders"
+            hint="Lines around cards, lists and tables. Off = a cleaner look; form fields and selected items keep theirs."
+            checked={prefs.borders}
+            onChange={(borders) => update((p) => ({ ...p, borders }))}
+          />
         </CardContent>
       </Card>
       {superAdmin && (

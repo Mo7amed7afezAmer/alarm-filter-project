@@ -18,8 +18,10 @@ import {
 const displayBody = z.object({
   hiddenCategories: z.array(category).max(3),
   hiddenAlarmNames: z.array(z.string().trim().min(1).max(200)).max(1000),
-  /** Site codes / full site names where the hidden types still show. */
-  exceptSites: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+  /** Per alarm name: site codes / full site names where it is flipped (hidden ↔ shown). */
+  siteExceptions: z
+    .record(z.string().max(200), z.array(z.string().trim().min(1).max(200)).max(200))
+    .default({}),
 });
 
 const prefsBody = z.object({
@@ -32,6 +34,7 @@ const prefsBody = z.object({
 
 const uiPrefsBody = z.object({
   theme: z.string().max(20),
+  borders: z.boolean().optional(),
   alarms: z.object({
     view: z.string().max(10).optional(),
     siteInfoIcons: z.boolean(),
@@ -39,8 +42,33 @@ const uiPrefsBody = z.object({
     mailGroupBySite: z.boolean().optional(),
     hiddenColumns: z.record(z.array(z.string().max(40)).max(40)),
     mail: z.record(z.boolean()).optional(),
+    sendChat: z.string().max(200).optional(),
+    // "Export image" of /alarms; normalizeAlarmImagePrefs cleans the values
+    image: z
+      .object({
+        columns: z.array(z.string().max(20)).max(20),
+        byOffice: z.boolean(),
+        rowsPerImage: z.number(),
+        sort: z.string().max(10),
+        officeColors: z.record(z.string().max(100), z.string().max(10)),
+        whatsappPhone: z.string().max(30),
+        shareAll: z.string().max(200),
+        shareOffices: z.record(z.string().max(100), z.string().max(200)),
+        shareMode: z.string().max(10),
+      })
+      .partial()
+      .optional(),
   }),
   // Hourly output settings: shapes are checked loosely here, normalizeHourlyPrefs cleans them.
+  // hourly image share chats; normalizeHourlyShare cleans the values
+  hourlyShare: z
+    .object({
+      mode: z.string().max(10),
+      all: z.string().max(200),
+      offices: z.record(z.string().max(100), z.string().max(200)),
+    })
+    .partial()
+    .optional(),
   hourly: z
     .object({
       hiddenSheets: z.array(z.string().max(40)).max(20),

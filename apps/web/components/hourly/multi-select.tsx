@@ -19,6 +19,7 @@ export function MultiSelect({
   placeholder = "All",
   className,
   swatch,
+  allOption,
 }: {
   label: string;
   options: Option[];
@@ -29,6 +30,8 @@ export function MultiSelect({
   className?: string;
   /** Optional color dot per option (office colors). */
   swatch?: (value: string) => string | null;
+  /** An "All" line on top, ticked while nothing is picked; clicking it clears the pick. */
+  allOption?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -52,13 +55,18 @@ export function MultiSelect({
   // keep selected values visible even if the current data no longer has them
   const all = useMemo<Option[]>(() => {
     const known = new Set(options.map((o) => o.value.toUpperCase()));
-    return [...options, ...value.filter((v) => !known.has(v.toUpperCase())).map((v) => ({ value: v }))];
+    return [
+      ...options,
+      ...value.filter((v) => !known.has(v.toUpperCase())).map((v) => ({ value: v })),
+    ];
   }, [options, value]);
   const shown = q ? all.filter((o) => o.value.toUpperCase().includes(q.trim().toUpperCase())) : all;
 
   const toggle = (v: string) =>
     onChange(
-      selected.has(v.toUpperCase()) ? value.filter((x) => x.toUpperCase() !== v.toUpperCase()) : [...value, v],
+      selected.has(v.toUpperCase())
+        ? value.filter((x) => x.toUpperCase() !== v.toUpperCase())
+        : [...value, v],
     );
 
   const summary =
@@ -107,6 +115,27 @@ export function MultiSelect({
             </div>
           )}
           <ul role="listbox" aria-multiselectable className="max-h-72 overflow-auto py-1">
+            {allOption && !q && (
+              <li className="border-b border-slate-100">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={value.length === 0}
+                  onClick={() => onChange([])}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium hover:bg-slate-100/70"
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      value.length === 0 ? "border-brand bg-brand text-white" : "border-slate-300",
+                    )}
+                  >
+                    {value.length === 0 && <Check className="h-3 w-3" />}
+                  </span>
+                  {allOption}
+                </button>
+              </li>
+            )}
             {shown.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">No matches</li>}
             {shown.map((o) => {
               const on = selected.has(o.value.toUpperCase());
@@ -118,7 +147,7 @@ export function MultiSelect({
                     role="option"
                     aria-selected={on}
                     onClick={() => toggle(o.value)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-100/70"
                   >
                     <span
                       className={cn(
@@ -136,7 +165,9 @@ export function MultiSelect({
                     )}
                     <span className="min-w-0 flex-1 truncate">{o.value}</span>
                     {o.count != null && (
-                      <span className="shrink-0 tabular-nums text-xs text-slate-400">{o.count}</span>
+                      <span className="shrink-0 tabular-nums text-xs text-slate-400">
+                        {o.count}
+                      </span>
                     )}
                   </button>
                 </li>

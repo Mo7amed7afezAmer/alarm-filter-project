@@ -24,6 +24,8 @@ export function UiPrefsProvider({ initial, children }: { initial: UiPrefs; child
     setPrefs((old) => {
       const next = normalizeUiPrefs(fn(old));
       document.documentElement.dataset.theme = next.theme;
+      if (next.borders) delete document.documentElement.dataset.borders;
+      else document.documentElement.dataset.borders = "off";
       clearTimeout(timer.current);
       setSaveState("saving");
       // Debounced: several clicks in a row (column checkboxes) are one request.

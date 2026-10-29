@@ -35,7 +35,9 @@ playwright-report/
 
 # video tour (docs/video): recordings and generated mock reports show real network data
 docs/video/*.webm
+docs/video/*-cuts.json
 docs/video/*.mp4
 docs/video/cuts.json
 docs/video/.raw/
 docs/video/.tour-fixtures/
+docs/video/pitch-frames/

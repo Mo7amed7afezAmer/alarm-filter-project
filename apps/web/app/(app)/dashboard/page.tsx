@@ -110,7 +110,8 @@ function StatCard({
     <div
       className={cn(
         "group flex h-full flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors",
-        href && "hover:border-slate-300 hover:bg-slate-50/60",
+        // slate-50 is the page background (inverted slate) — hover one step lighter than the card
+        href && "hover:border-slate-300 hover:bg-slate-100/70",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -285,7 +286,7 @@ export default function DashboardPage() {
               <li key={t.site}>
                 <Link
                   href={`/alarms?site=${encodeURIComponent(t.site)}`}
-                  className="group block rounded-md px-2 py-1.5 hover:bg-slate-50"
+                  className="group block rounded-md px-2 py-1.5 hover:bg-slate-100/70"
                   title={t.site}
                 >
                   <div className="flex items-center gap-2 text-sm">

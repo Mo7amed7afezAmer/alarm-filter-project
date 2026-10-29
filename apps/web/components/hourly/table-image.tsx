@@ -4,9 +4,10 @@
 // colors, header, title) and split into pages so each picture stays readable on a phone.
 // Columns, image sets (Down, Down sites, Environmental, …), rows per image and colours come from
 // the user's hourly settings (Settings → Hourly reports); the dialog can change the sets and the
-// rows per image for one export.
-// Share uses the Web Share API with files (phones, HTTPS only — e.g. via the tunnel); on the
-// LAN (plain http) the images are downloaded and attached in WhatsApp Web / Desktop.
+// rows per image for one export. The gear opens Image settings: Images (the sets of this export)
+// and Share settings (per user, uiPrefs.hourlyShare): every image to one chat, or each office's
+// images — drawn from that office's rows only — to its own chat.
+// Drawing and the Share / Download window are shared with the alarms page (image-export.tsx).
 
 import {
   HOURLY_IMAGE_SETS,
@@ -15,17 +16,28 @@ import {
   hourlyCellText,
   hourlyImageGroups,
   hourlySiteCount,
-  type HourlyColumnKey,
   type HourlyFilters,
+  type HourlyShare,
   type HourlyPrefs,
   type HourlyRow,
 } from "@alarm/core";
-import { Copy, Download, ImageIcon, Loader2, Share2, X } from "lucide-react";
+import { ImageIcon, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { orderedColumns, type CellFill } from "@/components/hourly/hourly-table";
+import {
+  columnWidths,
+  drawTable,
+  ImageExportDialog,
+  slug,
+  type ImagePage,
+  type ImageRow,
+  type ShareTarget,
+} from "@/components/image-export";
+import { ChatInput } from "@/components/alarm-image";
 import { Button } from "@/components/ui/button";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 import { useUiPrefs } from "@/components/ui-prefs";
-import { cn } from "@/lib/utils";
+import { useWhatsAppSender } from "@/components/whatsapp";
 
 /** Short names of the image sets (dialog + settings). */
 export const IMAGE_SET_NAME: Record<keyof HourlyPrefs["images"], string> = {
@@ -35,13 +47,6 @@ export const IMAGE_SET_NAME: Record<keyof HourlyPrefs["images"], string> = {
   envVipNodal: "Env · VIP / Nodal",
   power: "Power",
 };
-
-const FONT = `"Segoe UI", Roboto, Arial, sans-serif`;
-const SIZE = 13;
-const ROW_H = 24;
-const PAD_X = 8;
-const MAX_COL_W = 320;
-const SCALE = 2;
 
 /** "Office: TANTA, DUMIAT · Sheet: Environmental" — empty when nothing is filtered. */
 export function filterSummary(f: HourlyFilters): string {
@@ -61,133 +66,180 @@ export function filterSummary(f: HourlyFilters): string {
   return parts.join(" · ");
 }
 
-function fit(ctx: CanvasRenderingContext2D, text: string, width: number): string {
-  if (ctx.measureText(text).width <= width) return text;
-  let lo = 0;
-  let hi = text.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (ctx.measureText(text.slice(0, mid) + "…").width <= width) lo = mid;
-    else hi = mid - 1;
-  }
-  return text.slice(0, lo) + "…";
-}
+type SettingsTab = "images" | "share";
 
-/** One page of rows → PNG blob. Column widths are computed over ALL rows so pages line up. */
-function renderPage(opts: {
-  rows: HourlyRow[];
-  cols: { key: HourlyColumnKey; header: string }[];
-  widths: number[];
-  title: string;
-  subtitle: string;
-  footer: string;
-  fill: CellFill;
-}): Promise<Blob> {
-  const { rows, cols, widths, title, subtitle, footer, fill } = opts;
-  const tableW = widths.reduce((a, b) => a + b, 0);
-  const W = Math.max(tableW + 2, 480);
-  const titleH = subtitle ? 56 : 36;
-  const H = titleH + ROW_H * (rows.length + 1) + 28;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = W * SCALE;
-  canvas.height = H * SCALE;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(SCALE, SCALE);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
-  ctx.textBaseline = "middle";
-
-  // title
-  ctx.fillStyle = "#0f172a";
-  ctx.font = `bold 15px ${FONT}`;
-  ctx.fillText(fit(ctx, title, W - 2 * PAD_X), PAD_X, 18);
-  if (subtitle) {
-    ctx.fillStyle = "#475569";
-    ctx.font = `${SIZE - 1}px ${FONT}`;
-    ctx.fillText(fit(ctx, subtitle, W - 2 * PAD_X), PAD_X, 40);
-  }
-
-  // header
-  let y = titleH;
-  ctx.fillStyle = "#e2e8f0";
-  ctx.fillRect(1, y, tableW, ROW_H);
-  ctx.fillStyle = "#0f172a";
-  ctx.font = `bold ${SIZE}px ${FONT}`;
-  let x = 1;
-  cols.forEach((c, i) => {
-    ctx.fillText(fit(ctx, c.header, widths[i]! - 2 * PAD_X), x + PAD_X, y + ROW_H / 2);
-    x += widths[i]!;
-  });
-
-  // rows
-  ctx.font = `${SIZE}px ${FONT}`;
-  for (const r of rows) {
-    y += ROW_H;
-    x = 1;
-    cols.forEach((c, i) => {
-      const color = fill(r, c.key);
-      ctx.fillStyle = color ? `#${color}` : "#ffffff";
-      ctx.fillRect(x, y, widths[i]!, ROW_H);
-      ctx.fillStyle = "#0f172a";
-      ctx.fillText(
-        fit(ctx, hourlyCellText(r, c.key), widths[i]! - 2 * PAD_X),
-        x + PAD_X,
-        y + ROW_H / 2,
-      );
-      x += widths[i]!;
-    });
-  }
-
-  // grid
-  ctx.strokeStyle = "#94a3b8";
-  ctx.lineWidth = 0.5;
-  const top = titleH;
-  const bottom = titleH + ROW_H * (rows.length + 1);
-  for (let i = 0; i <= rows.length + 1; i++) {
-    ctx.beginPath();
-    ctx.moveTo(1, top + i * ROW_H);
-    ctx.lineTo(1 + tableW, top + i * ROW_H);
-    ctx.stroke();
-  }
-  x = 1;
-  for (let i = 0; i <= widths.length; i++) {
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, bottom);
-    ctx.stroke();
-    x += widths[i] ?? 0;
-  }
-
-  ctx.fillStyle = "#64748b";
-  ctx.font = `${SIZE - 2}px ${FONT}`;
-  ctx.fillText(footer, PAD_X, bottom + 14);
-
-  return new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("Image could not be created"))),
-      "image/png",
-    ),
+/** Gear window of the hourly image: the image sets of this export and the share chats. */
+function HourlyImageSettings({
+  sets,
+  onSets,
+  share,
+  onShare,
+  offices,
+  onClose,
+}: {
+  sets: HourlyPrefs["images"];
+  onSets: (s: HourlyPrefs["images"]) => void;
+  share: HourlyShare;
+  onShare: (s: HourlyShare) => void;
+  /** Offices of the rows (Site Master names). */
+  offices: string[];
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<SettingsTab>("images");
+  // Share settings only while the user's own WhatsApp number is linked
+  const { ready: linked } = useWhatsAppSender();
+  // offices with a saved chat that are not in this report stay listed
+  const names = [...new Set([...offices, ...Object.keys(share.offices)])].sort();
+  const setOfficeChat = (o: string, v: string) => {
+    const next = { ...share.offices };
+    if (v) next[o] = v;
+    else delete next[o];
+    onShare({ ...share, offices: next });
+  };
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-2 sm:p-6"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-label="Image settings"
+        className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[85vh]"
+      >
+        <div className="flex items-center justify-between px-4 pt-3">
+          <h3 className="font-semibold text-slate-900">Image settings</h3>
+          <button
+            type="button"
+            aria-label="Close settings"
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex gap-1 border-b border-slate-200 px-4 pt-2" role="tablist">
+          {(
+            [
+              ["images", "Images"],
+              ["share", "Share settings"],
+            ] as const
+          )
+            .filter(([id]) => id !== "share" || linked)
+            .map(([id, label]) => (
+              <button
+                key={id}
+                role="tab"
+                type="button"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={
+                  "border-b-2 px-3 pb-2.5 text-sm font-medium " +
+                  (tab === id
+                    ? "border-brand text-slate-900"
+                    : "border-transparent text-slate-500 hover:text-slate-900")
+                }
+              >
+                {label}
+              </button>
+            ))}
+        </div>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+          {tab === "images" || !linked ? (
+            <>
+              <p className="text-xs text-slate-500">
+                The image sets of this export. The defaults (and per office / office groups) are in
+                Settings → Alarms, images &amp; colours.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {HOURLY_IMAGE_SETS.map((k) => (
+                  <label
+                    key={k}
+                    className="flex h-9 items-center gap-2 rounded-md bg-slate-100 px-3 text-slate-900"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sets[k].enabled}
+                      onChange={(e) =>
+                        onSets({ ...sets, [k]: { ...sets[k], enabled: e.target.checked } })
+                      }
+                    />
+                    {IMAGE_SET_NAME[k]}
+                    {(sets[k].byOffice || sets[k].grouped) && (
+                      <span className="text-xs text-slate-500">
+                        ({sets[k].grouped ? "office groups" : "per office"})
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                {(
+                  [
+                    ["all", "All images to one chat"],
+                    ["office", "Each office to its own chat"],
+                  ] as const
+                ).map(([mode, text]) => (
+                  <label key={mode} className="flex h-8 items-center gap-2 text-slate-900">
+                    <input
+                      type="radio"
+                      name="hourly-share-mode"
+                      checked={share.mode === mode}
+                      onChange={() => onShare({ ...share, mode })}
+                    />
+                    {text}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500">
+                {share.mode === "all"
+                  ? "Every image goes to this chat."
+                  : "Each office's chat gets images of that office's rows only."}{" "}
+                A WhatsApp number or a group invite link (group info → Invite via link). Empty = you
+                pick the chat.
+              </p>
+              {share.mode === "all" ? (
+                <div className="max-w-md">
+                  <ChatInput
+                    value={share.all}
+                    label="All images: number or group link"
+                    onChange={(all) => onShare({ ...share, all })}
+                  />
+                </div>
+              ) : names.length === 0 ? (
+                <p className="text-slate-500">No offices in this report.</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {names.map((o) => (
+                    <div
+                      key={o}
+                      className="flex items-start gap-2 rounded-md bg-slate-100 px-2 py-1.5"
+                    >
+                      <span className="w-32 shrink-0 truncate pt-1.5 text-slate-900" title={o}>
+                        {o}
+                      </span>
+                      <ChatInput
+                        value={share.offices[o] ?? ""}
+                        label={`${o}: number or group link`}
+                        onChange={(v) => setOfficeChat(o, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex justify-end border-t border-slate-200 px-4 py-3">
+          <Button size="sm" className="h-9" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </div>
   );
-}
-
-function columnWidths(
-  rows: HourlyRow[],
-  cols: { key: HourlyColumnKey; header: string }[],
-): number[] {
-  const ctx = document.createElement("canvas").getContext("2d")!;
-  return cols.map((c) => {
-    ctx.font = `bold ${SIZE}px ${FONT}`;
-    let w = ctx.measureText(c.header).width;
-    ctx.font = `${SIZE}px ${FONT}`;
-    for (const r of rows) w = Math.max(w, ctx.measureText(hourlyCellText(r, c.key)).width);
-    return Math.ceil(Math.min(w, MAX_COL_W) + 2 * PAD_X);
-  });
-}
-
-interface Page {
-  file: File;
-  url: string;
 }
 
 export function TableImageButton({
@@ -206,14 +258,27 @@ export function TableImageButton({
   /** Report time as wall clock "YYYY-MM-DD HH:mm:ss" — alarm age is measured from it. */
   ageRef: string | null;
 }) {
-  const { prefs } = useUiPrefs();
-  const hp = prefs.hourly;
+  const { hp } = useHourlyPrefs();
   const [open, setOpen] = useState(false);
   const [perPage, setPerPage] = useState(hp.imageRowsPerPage);
   const [sets, setSets] = useState<HourlyPrefs["images"]>(hp.images);
-  const [pages, setPages] = useState<Page[]>([]);
+  const [pages, setPages] = useState<ImagePage[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Images of each office's own rows (for the office chats). */
+  const [officePages, setOfficePages] = useState<Record<string, ImagePage[]>>({});
+  const { prefs, update } = useUiPrefs();
+  const share = prefs.hourlyShare;
+  const setShare = (hourlyShare: HourlyShare) => update((p) => ({ ...p, hourlyShare }));
+  const offices = useMemo(
+    () => [...new Set(rows.map((r) => r.office.trim().toUpperCase()).filter(Boolean))].sort(),
+    [rows],
+  );
+  // offices whose chat is saved and that have rows: their images are drawn separately
+  const shareOffices =
+    share.mode === "office" ? offices.filter((o) => share.offices[o]) : ([] as string[]);
+  const shareKey = shareOffices.join("|");
 
   // the settings are the starting point every time the dialog opens
   useEffect(() => {
@@ -229,45 +294,68 @@ export function TableImageButton({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const made: Page[] = [];
+    const made: ImagePage[] = [];
     setBusy(true);
     setMsg(null);
     (async () => {
-      const groups = hourlyImageGroups(rows, sets);
+      const groups = hourlyImageGroups(rows, sets, perPage);
+      const cells = (r: HourlyRow): ImageRow => ({
+        text: cols.map((c) => hourlyCellText(r, c.key)),
+        fill: cols.map((c) => fill(r, c.key)),
+      });
+      const headers = cols.map((c) => c.header);
       // same column widths for every image so they line up when scrolled through
       const widths = columnWidths(
-        groups.flatMap((g) => g.rows),
-        cols,
+        headers,
+        groups.flatMap((g) => g.rows.map(cells)),
       );
       const stamp = new Date().toLocaleString("en-GB", { hour12: false });
-      for (const g of groups) {
-        const n = Math.max(1, Math.ceil(g.rows.length / perPage));
-        const head = g.label ? `${title} · ${g.label}` : title;
-        const sites = hourlySiteCount(g.rows);
-        for (let i = 0; i < n && !cancelled; i++) {
-          const slice = g.rows.slice(i * perPage, (i + 1) * perPage);
-          const range = g.rows.length
-            ? `${g.label ? `${g.label} ` : ""}rows ${i * perPage + 1}–${i * perPage + slice.length} of ${g.rows.length} · ${sites} site${sites === 1 ? "" : "s"}`
-            : "no rows";
-          const blob = await renderPage({
-            rows: slice,
-            cols,
-            widths,
-            title: n > 1 ? `${head}  (${i + 1}/${n})` : head,
-            subtitle,
-            footer: `${range} · Alarm Filter · ${stamp}`,
-            fill,
-          });
-          const slug = g.label
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "");
-          const name = `${fileStem}${slug ? `-${slug}` : ""}${n > 1 ? `-${i + 1}of${n}` : ""}.png`;
-          const file = new File([blob], name, { type: "image/png" });
-          made.push({ file, url: URL.createObjectURL(blob) });
+      /** Draws the groups' pages (into `made` too, so they are freed on close). */
+      const draw = async (gs: typeof groups, prefix = "") => {
+        const out: ImagePage[] = [];
+        for (const g of gs) {
+          const n = Math.max(1, Math.ceil(g.rows.length / perPage));
+          const label = [prefix, g.label].filter(Boolean).join(" · ");
+          const head = label ? `${title} · ${label}` : title;
+          const sites = hourlySiteCount(g.rows);
+          for (let i = 0; i < n && !cancelled; i++) {
+            const slice = g.rows.slice(i * perPage, (i + 1) * perPage);
+            const range = g.rows.length
+              ? `${label ? `${label} ` : ""}rows ${i * perPage + 1}–${i * perPage + slice.length} of ${g.rows.length} · ${sites} site${sites === 1 ? "" : "s"}`
+              : "no rows";
+            const blob = await drawTable({
+              rows: slice.map(cells),
+              headers,
+              widths,
+              title: n > 1 ? `${head}  (${i + 1}/${n})` : head,
+              subtitle,
+              footer: `${range} · Alarm Filter · ${stamp}`,
+            });
+            const s = slug(label);
+            const name = `${fileStem}${s ? `-${s}` : ""}${n > 1 ? `-${i + 1}of${n}` : ""}.png`;
+            const file = new File([blob], name, { type: "image/png" });
+            const page = { file, url: URL.createObjectURL(blob) };
+            made.push(page);
+            out.push(page);
+          }
         }
+        return out;
+      };
+      const shown = await draw(groups);
+      // each office chat: the same image sets, made from that office's rows only
+      const perOffice: Record<string, ImagePage[]> = {};
+      for (const o of shareOffices) {
+        if (cancelled) break;
+        const own = rows.filter((r) => r.office.trim().toUpperCase() === o);
+        const single = Object.fromEntries(
+          Object.entries(sets).map(([k, v]) => [k, { ...v, byOffice: false, grouped: false }]),
+        ) as HourlyPrefs["images"];
+        perOffice[o] = await draw(hourlyImageGroups(own, single, perPage), o);
       }
-      if (!cancelled) setPages(made);
+      if (!cancelled) {
+        setPages(shown);
+        setOfficePages(perOffice);
+      }
     })()
       .catch((e) => !cancelled && setMsg((e as Error).message))
       .finally(() => !cancelled && setBusy(false));
@@ -275,45 +363,18 @@ export function TableImageButton({
       cancelled = true;
       made.forEach((p) => URL.revokeObjectURL(p.url));
     };
-  }, [open, rows, cols, perPage, sets, title, subtitle, fileStem, fill]);
+    // shareOffices is keyed by shareKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, rows, cols, perPage, sets, title, subtitle, fileStem, fill, shareKey]);
 
-  const files = pages.map((p) => p.file);
-  const canShare =
-    typeof navigator !== "undefined" &&
-    !!navigator.canShare &&
-    files.length > 0 &&
-    navigator.canShare({ files });
-  const canCopy =
-    typeof window !== "undefined" &&
-    window.isSecureContext &&
-    !!navigator.clipboard &&
-    "ClipboardItem" in window;
-
-  const share = async () => {
-    try {
-      await navigator.share({ files, title });
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setMsg(`Share failed: ${(e as Error).message}`);
-    }
-  };
-  const download = () => {
-    pages.forEach((p, i) =>
-      setTimeout(() => {
-        const a = document.createElement("a");
-        a.href = p.url;
-        a.download = p.file.name;
-        a.click();
-      }, i * 300),
-    );
-  };
-  const copy = async (p: Page) => {
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": p.file })]);
-      setMsg("Image copied — paste it in WhatsApp (Ctrl+V)");
-    } catch (e) {
-      setMsg(`Copy failed: ${(e as Error).message}`);
-    }
-  };
+  const targets: ShareTarget[] =
+    share.mode === "office"
+      ? shareOffices
+          .filter((o) => officePages[o]?.length)
+          .map((o) => ({ label: o, chat: share.offices[o]!, pages: officePages[o]! }))
+      : share.all
+        ? [{ label: "All images", chat: share.all, pages }]
+        : [];
 
   return (
     <>
@@ -322,26 +383,37 @@ export function TableImageButton({
         Export image
       </Button>
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-6"
-          onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-label="Table as image"
-            className="w-full max-w-5xl rounded-xl bg-white shadow-xl"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <h2 className="font-semibold text-slate-900">Table as image</h2>
-              <button
-                aria-label="Close"
-                className="text-slate-500 hover:text-slate-900"
-                onClick={() => setOpen(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 px-4 py-3 text-sm">
+        <ImageExportDialog
+          title="Table as image"
+          pages={pages}
+          busy={busy}
+          msg={msg}
+          onMsg={setMsg}
+          onClose={() => setOpen(false)}
+          targets={targets}
+          toolbar={
+            <button
+              type="button"
+              aria-label="Image settings"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              title="Images and share settings"
+              className={
+                "rounded-md p-1.5 hover:bg-slate-100 hover:text-slate-900 " +
+                (settingsOpen ? "bg-slate-100 text-brand" : "text-slate-500")
+              }
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          }
+          summary={
+            <>
+              {rows.length.toLocaleString("en-US")} rows → {pages.length} image
+              {pages.length === 1 ? "" : "s"}
+            </>
+          }
+          controls={
+            <>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-500">Rows per image</span>
                 <select
@@ -356,87 +428,19 @@ export function TableImageButton({
                   ))}
                 </select>
               </label>
-              <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <legend className="mb-1 text-xs text-slate-500">Images</legend>
-                {HOURLY_IMAGE_SETS.map((k) => (
-                  <label key={k} className="flex h-8 items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={sets[k].enabled}
-                      onChange={(e) =>
-                        setSets({ ...sets, [k]: { ...sets[k], enabled: e.target.checked } })
-                      }
-                    />
-                    {IMAGE_SET_NAME[k]}
-                    {sets[k].byOffice && (
-                      <span className="text-xs text-slate-400">(per office)</span>
-                    )}
-                  </label>
-                ))}
-              </fieldset>
-              <div className="ml-auto flex flex-wrap gap-2">
-                {canShare && (
-                  <Button size="sm" onClick={() => void share()} disabled={busy}>
-                    <Share2 className="h-4 w-4" />
-                    Share{pages.length > 1 ? ` ${pages.length} images` : ""}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant={canShare ? "outline" : "default"}
-                  onClick={download}
-                  disabled={busy || !pages.length}
-                >
-                  <Download className="h-4 w-4" />
-                  Download{pages.length > 1 ? ` ${pages.length} images` : ""}
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-1 px-4 pt-2 text-xs text-slate-500">
-              {rows.length.toLocaleString("en-US")} rows → {pages.length} image
-              {pages.length === 1 ? "" : "s"}
-              {!canShare && (
-                <span>
-                  {" "}
-                  · Direct sharing needs a phone on HTTPS — here, download (or copy) and attach in
-                  WhatsApp.
-                </span>
+              {settingsOpen && (
+                <HourlyImageSettings
+                  sets={sets}
+                  onSets={setSets}
+                  share={share}
+                  onShare={setShare}
+                  offices={offices}
+                  onClose={() => setSettingsOpen(false)}
+                />
               )}
-              {msg && <div className="font-medium text-slate-800">{msg}</div>}
-            </div>
-            <div className="max-h-[70vh] space-y-4 overflow-auto p-4">
-              {busy && (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-                  <Loader2 className="h-5 w-5 animate-spin" /> Drawing…
-                </div>
-              )}
-              {!busy &&
-                pages.map((p) => (
-                  <figure key={p.url} className="space-y-1">
-                    <figcaption className="flex items-center gap-2 text-xs text-slate-500">
-                      {p.file.name}
-                      {canCopy && (
-                        <button
-                          className={cn(
-                            "inline-flex items-center gap-1 text-sky-700 hover:underline",
-                          )}
-                          onClick={() => void copy(p)}
-                        >
-                          <Copy className="h-3 w-3" /> Copy
-                        </button>
-                      )}
-                    </figcaption>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.url}
-                      alt={p.file.name}
-                      className="max-w-full rounded border border-slate-200"
-                    />
-                  </figure>
-                ))}
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
       )}
     </>
   );

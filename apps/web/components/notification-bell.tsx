@@ -62,7 +62,7 @@ function ItemRow({ item, now, onClick }: { item: Item; now: number; onClick?: ()
     <Link
       href={`/alarms?site=${encodeURIComponent(item.site)}`}
       onClick={onClick}
-      className={cn("block px-4 py-3 hover:bg-slate-50", item.unread && "bg-sky-50/60")}
+      className={cn("block px-4 py-3 hover:bg-slate-100/70", item.unread && "bg-sky-50/60")}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2">

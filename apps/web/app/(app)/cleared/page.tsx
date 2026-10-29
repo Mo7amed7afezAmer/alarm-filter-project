@@ -66,7 +66,7 @@ function ClearedView() {
   if (site) filter.set("site", site);
   const query = new URLSearchParams(filter);
   query.set("page", String(page));
-  query.set("pageSize", "100");
+  query.set("pageSize", "50");
 
   const { data, error, loading } = usePoll<Page<ClearedAlarm>>(
     `/api/alarms/cleared?${query}`,

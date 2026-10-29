@@ -5,7 +5,13 @@ import { Controller, Delete, Get, HttpCode, Param, Post, Put, Req, Res } from "@
 import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
 import { z } from "zod";
-import { BATTERY_NONE, BATTERY_WEAK, baseNormalize, hasGenerator } from "@alarm/core";
+import {
+  BATTERY_NONE,
+  BATTERY_WEAK,
+  baseNormalize,
+  hasGenerator,
+  seesAllOffices,
+} from "@alarm/core";
 import {
   HourlyReportError,
   parseSiteMasterXlsx,
@@ -103,7 +109,7 @@ const TEMPLATE_COLUMNS = [
 
 /** Office scope for managing sites: null = every site (super admin). */
 async function manageScope(user: AuthUser): Promise<string | null> {
-  if (user.role === "SUPER_ADMIN") return null;
+  if (seesAllOffices(user.role)) return null;
   return (await getOffice(user.id)) ?? "";
 }
 
@@ -218,7 +224,7 @@ export class SiteMasterController {
         offices: offices.map((o) => ({ office: o.office, count: o._count._all })),
         siteTypes: types.map((t) => t.siteType).filter((t): t is string => !!t),
         /** Can the user add / edit / delete / import (in their scope)? */
-        canManage: user.role === "SUPER_ADMIN" || (user.role === "ADMIN" && !!mine),
+        canManage: seesAllOffices(user.role) || (user.role === "ADMIN" && !!mine),
       },
     };
   }

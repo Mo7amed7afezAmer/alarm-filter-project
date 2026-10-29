@@ -24,3 +24,48 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Borderless look (Settings → General → "Show borders" off, html[data-borders="off"]): the grey
+   lines around cards, lists and tables disappear; coloured borders (selected items, badges) and
+   form fields and controls (slate-300: checkboxes, radio circles) keep theirs. The sidebar and theme previews set their own data-theme. */
+html[data-borders="off"] {
+  --border: transparent;
+}
+html[data-borders="off"]
+  :is(
+    .border-slate-100,
+    .border-slate-200,
+    .divide-slate-100 > *,
+    .divide-slate-200 > *,
+    .border-border
+  ) {
+  border-color: transparent;
+}
+html[data-borders="off"] :is(input, select, textarea)[class] {
+  border-color: rgb(var(--c-slate-300));
+}
+
+/* Without lines, rows and boxes are told apart by tints. Zero specificity (:where) inside the
+   base layer, so any bg-* class of the element itself (an overdue row, a selected item, a card)
+   still wins. */
+@layer base {
+  /* tables: striped rows, hover */
+  :where(html[data-borders="off"] tbody tr:nth-child(even)) {
+    background-color: rgb(var(--c-slate-100) / 0.35);
+  }
+  :where(html[data-borders="off"] tbody tr:hover) {
+    background-color: rgb(var(--c-slate-100) / 0.7);
+  }
+  /* divided lists: striped like the tables */
+  :where(html[data-borders="off"] :is(.divide-slate-100, .divide-slate-200) > :nth-child(even)) {
+    background-color: rgb(var(--c-slate-100) / 0.35);
+  }
+  /* boxes drawn only by a grey outline (option tiles, chips, sub-panels — `border` on all four
+     sides, not a single divider line): a soft panel instead */
+  :where(
+    html[data-borders="off"]
+      .border:is(.border-slate-100, .border-slate-200):not(input, select, textarea, tr, td, th)
+  ) {
+    background-color: rgb(var(--c-slate-100) / 0.45);
+  }
+}

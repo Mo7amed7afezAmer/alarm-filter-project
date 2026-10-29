@@ -13,3 +13,4 @@ export { PrismaAlarmRepository } from "./repository.js";
 export * from "./gmailAuth.js";
 export * from "./offices.js";
 export * from "./displayFilter.js";
+export * from "./hourlySettings.js";

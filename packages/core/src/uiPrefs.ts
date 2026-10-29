@@ -1,6 +1,12 @@
 // Personal UI settings of one user (users.uiPrefs): theme and how the alarm tables look.
 // Pure part — the API validates and stores it, the web pages read it.
 
+import {
+  DEFAULT_ALARM_IMAGE_PREFS,
+  normalizeAlarmImagePrefs,
+  normalizeWhatsAppTarget,
+  type AlarmImagePrefs,
+} from "./alarmImage.js";
 import { DEFAULT_HOURLY_PREFS, normalizeHourlyPrefs, type HourlyPrefs } from "./hourly/output.js";
 
 export const THEMES = ["blue", "dark", "light"] as const;
@@ -69,6 +75,9 @@ export type MailPart = (typeof MAIL_PARTS)[number]["id"];
 
 export interface UiPrefs {
   theme: Theme;
+  /** Grey border lines around cards, lists and tables (2026-10-27; default off = borderless
+   *  look, user 2026-10-28). */
+  borders: boolean;
   alarms: {
     view: AlarmView;
     /** VIP / Nodality / Battery as small icons next to the site instead of columns + badge. */
@@ -81,13 +90,24 @@ export interface UiPrefs {
     hiddenColumns: Record<AlarmTable, string[]>;
     /** Mail view: which parts of a card are shown. */
     mail: Record<MailPart, boolean>;
+    /** "Export image" of the active alarms page (one row per site). */
+    image: AlarmImagePrefs;
+    /** "Send" panel: the WhatsApp number or group link the update goes to; "" = pick a chat. */
+    sendChat: string;
   };
   /** Hourly reports: table, images, Excel and PDF (hourly/output.ts). */
   hourly: HourlyPrefs;
+  /**
+   * Where the hourly "Table as image" sends (user request 2026-10-29), per user like the alarm
+   * image's share chats: every image to `all`, or each office's images to its own chat
+   * (`offices`: Site Master office name, upper-case → number / group link).
+   */
+  hourlyShare: HourlyShare;
 }
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
   theme: "blue",
+  borders: false,
   alarms: {
     view: "mail",
     siteInfoIcons: false,
@@ -105,8 +125,11 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
       received: false,
       raised: false,
     },
+    image: DEFAULT_ALARM_IMAGE_PREFS,
+    sendChat: "",
   },
   hourly: DEFAULT_HOURLY_PREFS,
+  hourlyShare: { mode: "all", all: "", offices: {} },
 };
 
 /** Any stored / submitted value → a complete, valid UiPrefs (unknown keys and ids dropped). */
@@ -120,6 +143,7 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
   const d = DEFAULT_UI_PREFS.alarms;
   return {
     theme: THEMES.includes(r.theme as Theme) ? (r.theme as Theme) : DEFAULT_UI_PREFS.theme,
+    borders: bool(r.borders, DEFAULT_UI_PREFS.borders),
     alarms: {
       view: ALARM_VIEWS.includes(a.view as AlarmView) ? (a.view as AlarmView) : d.view,
       siteInfoIcons: bool(a.siteInfoIcons, d.siteInfoIcons),
@@ -135,7 +159,32 @@ export function normalizeUiPrefs(raw: unknown): UiPrefs {
       mail: Object.fromEntries(
         MAIL_PARTS.map(({ id }) => [id, bool(mail[id], d.mail[id])]),
       ) as Record<MailPart, boolean>,
+      image: normalizeAlarmImagePrefs(a.image),
+      sendChat: typeof a.sendChat === "string" ? normalizeWhatsAppTarget(a.sendChat) : "",
     },
     hourly: normalizeHourlyPrefs(r.hourly),
+    hourlyShare: normalizeHourlyShare(r.hourlyShare),
+  };
+}
+
+export interface HourlyShare {
+  mode: "all" | "office";
+  all: string;
+  offices: Record<string, string>;
+}
+
+export function normalizeHourlyShare(raw: unknown): HourlyShare {
+  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const offices = r.offices && typeof r.offices === "object" ? r.offices : {};
+  return {
+    mode: r.mode === "office" ? "office" : "all",
+    all: typeof r.all === "string" ? normalizeWhatsAppTarget(r.all) : "",
+    offices: Object.fromEntries(
+      Object.entries(offices)
+        .filter(([k, v]) => k.trim() && typeof v === "string")
+        .map(([k, v]) => [k.trim().toUpperCase(), normalizeWhatsAppTarget(v as string)] as const)
+        .filter(([, v]) => v)
+        .slice(0, 100),
+    ),
   };
 }

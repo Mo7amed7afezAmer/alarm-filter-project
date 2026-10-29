@@ -1,19 +1,31 @@
 // Roles and office access — pure functions (unit-tested in roles.test.ts).
-//   VIEWER < OPERATOR < ADMIN (office admin) < SUPER_ADMIN.
+//   VIEWER < OPERATOR < ADMIN (office admin) < HOTLINE < SUPER_ADMIN.
+// HOTLINE (2026-10-29, user request): every office and the super admin's powers (office view,
+// reprocess, Site Master of every office, hourly processing, its own WhatsApp) EXCEPT the
+// settings that shape the data for everyone — classification, hidden-for-everyone types, hourly
+// settings, users & roles, Gmail, value normalization. Those stay SUPER_ADMIN only (rank), and
+// the API refuses HOTLINE on the ADMIN-level ones (users, hourly settings).
 // Everyone but SUPER_ADMIN belongs to one office (users.office) and sees only that office.
 // An office admin manages the viewers/operators of their own office; the super admin manages
 // everyone and every setting, and picks which office (or all) they are looking at.
 
-export const ROLES = ["VIEWER", "OPERATOR", "ADMIN", "SUPER_ADMIN"] as const;
+export const ROLES = ["VIEWER", "OPERATOR", "ADMIN", "HOTLINE", "SUPER_ADMIN"] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Role hierarchy: each role can do everything the ones before it can. */
-export const ROLE_RANK: Record<Role, number> = { VIEWER: 0, OPERATOR: 1, ADMIN: 2, SUPER_ADMIN: 3 };
+export const ROLE_RANK: Record<Role, number> = {
+  VIEWER: 0,
+  OPERATOR: 1,
+  ADMIN: 2,
+  HOTLINE: 3,
+  SUPER_ADMIN: 4,
+};
 
 export const ROLE_LABEL: Record<Role, string> = {
   VIEWER: "viewer",
   OPERATOR: "operator",
   ADMIN: "office admin",
+  HOTLINE: "hotline",
   SUPER_ADMIN: "super admin",
 };
 
@@ -21,6 +33,10 @@ export const hasRole = (actual: string | undefined, needed: Role): boolean =>
   actual !== undefined && (ROLE_RANK[actual as Role] ?? -1) >= ROLE_RANK[needed];
 
 export const isSuperAdmin = (role: string | undefined): boolean => role === "SUPER_ADMIN";
+
+/** Sees every office and picks which one (or a group) to look at: super admin and hotline. */
+export const seesAllOffices = (role: string | undefined): boolean =>
+  role === "SUPER_ADMIN" || role === "HOTLINE";
 
 export interface Account {
   id: number;
@@ -33,7 +49,7 @@ export interface Account {
  * "" = none (a user without an office — matches no row, office is never stored as "").
  */
 export function scopeOfficeOf(user: Pick<Account, "role" | "office">): string | null {
-  if (isSuperAdmin(user.role)) return user.office || null;
+  if (seesAllOffices(user.role)) return user.office || null;
   return user.office || "";
 }
 
@@ -93,7 +109,8 @@ export function checkAssignment(
       return { error: "You can only manage users of your own office" };
     return { office: actor.office };
   }
-  if (role === "SUPER_ADMIN") return { office: office || null };
+  // like the super admin, a hotline account sees every office (users.office = the one viewed)
+  if (seesAllOffices(role)) return { office: office || null };
   if (!office) return { error: `A ${ROLE_LABEL[role]} needs an office` };
   return { office };
 }

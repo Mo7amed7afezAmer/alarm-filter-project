@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const video = path.resolve(here, "../../../../docs/video/alarm-filter-tour.webm");
+const video = path.resolve(here, `../../../../docs/video/${process.env.NAME ?? "alarm-filter-tour"}.webm`);
 const [outDir, ...times] = process.argv.slice(2);
 mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch();

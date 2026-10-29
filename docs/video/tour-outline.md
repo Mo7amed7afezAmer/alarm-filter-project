@@ -5,6 +5,8 @@ The video and the generated mock reports show real network data (sites, phones) 
 gitignored; share the video only inside the team.
 
 Recorded headless by `apps/web/e2e/tour/tour.mjs` (Playwright `recordVideo`) against the dev DB,
+in the **Dark** theme by default (`TOUR_THEME=blue|dark|light` overrides; the account's own theme
+and prefs are restored afterwards),
 with the `.claude/launch.json` servers `api-tour-mock` (:4110) + `web-via-api-mock` (:3310).
 Re-record (from `apps/web`):
 
@@ -48,3 +50,33 @@ clipboard copies happen inside the headless browser only.
 | 21 | Settings · Gmail connection | Status, Test connection, Reconnect, Upload credentials.json |
 | 22 | Settings · Site Master | Import xlsx, site table (phone editable), normalization rules |
 | 23 | Outro | Sign out |
+
+## Roles video (2026-10-29) — `docs/video/alarm-filter-roles.webm`
+
+Silent screen recording (~5 min 20 s, 1440×900), in the **Dark** theme by default (`TOUR_THEME`
+as above; the tour accounts are created with it, the office admin's prefs are restored at the end):
+the main functions per role, with a floating
+text bubble next to each highlighted element and a full-screen card per role (Arabic, English UI
+terms). Script `apps/web/e2e/tour/tour-roles.mjs`. It creates temporary accounts
+`tour-operator@tour.local` (Operator, DN/Kafr ElDawar), `tour-hotline@tour.local` (Hotline) and
+`tour-super@tour.local` (Super admin) with random passwords in the dev DB, uses
+`DEV_TEST_EMAIL` (office admin) for the office-admin part, never presses Send, blurs the users
+lists, and deletes the tour accounts (and any WhatsApp session folder they got) at the end.
+Re-record (from `apps/web`, Git Bash needs `MSYS_NO_PATHCONV=1` for path arguments):
+
+1. Start `api-tour-mock` and `web-via-api-mock`; optionally warm up with `explore.mjs`.
+2. `node e2e/tour/tour-roles.mjs` → raw video + `alarm-filter-roles-cuts.json`.
+3. `NAME=alarm-filter-roles node e2e/tour/cut.mjs` → removes the page loads (real time).
+4. `NAME=alarm-filter-roles node e2e/tour/frames.mjs <dir> 10 60 …` → stills to check.
+
+| # | Scene | Floating text shows |
+|---|---|---|
+| 1 | Intro + roles cards | What the system does; the five roles in one line each |
+| 2 | Operator · Alarms | Category tabs with counts, the alarm card (site, cell, age, tags), call the guard, search, Export image (category, image, Download) |
+| 3 | Operator · Cleared | Closed alarms with repair time, 50 a page |
+| 4 | Operator · Hourly Alarms | Report list (10 a page), Process → Open, filters, colours, Export image (Down / Environmental, office groups, gear) |
+| 5 | Operator · Site Master | Search, Details window (every field of a site) |
+| 6 | Office admin | Add users of the office; Alarms, images & colours (category change, Sites, Office groups, office colours) |
+| 7 | Hotline | Only Alarms / Cleared / Dashboard / Settings, Office filter, one image per office, Dashboard |
+| 8 | Super admin | Classification rules, Office view, every role incl. hotline |
+| 9 | Outro card | Value per role |

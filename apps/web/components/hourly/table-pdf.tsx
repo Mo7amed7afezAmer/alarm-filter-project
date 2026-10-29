@@ -17,7 +17,7 @@ import { useState } from "react";
 import { orderedColumns } from "@/components/hourly/hourly-table";
 import { filterSummary } from "@/components/hourly/table-image";
 import { Button } from "@/components/ui/button";
-import { useUiPrefs } from "@/components/ui-prefs";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 
 const rgb = (hex: string): [number, number, number] => [
   parseInt(hex.slice(0, 2), 16),
@@ -40,7 +40,7 @@ export function TablePdfButton({
   /** Report time (wall clock) the alarm age is measured from. */
   ageRef: string | null;
 }) {
-  const { prefs } = useUiPrefs();
+  const { hp: hourly } = useHourlyPrefs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +49,7 @@ export function TablePdfButton({
     setError(null);
     try {
       const [{ jsPDF }, { autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-      const hp = prefs.hourly;
+      const hp = hourly;
       const cols = orderedColumns(hp.tableColumns);
       const groups = splitHourlyRows(rows, hp.split);
       const subtitle = filterSummary(filters);

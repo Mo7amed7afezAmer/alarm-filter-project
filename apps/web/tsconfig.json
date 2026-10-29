@@ -37,7 +37,9 @@
     ".next-preview/types/**/*.ts",
     ".next-mock/types/**/*.ts",
     ".next-viaapi/types/**/*.ts",
-    ".next-viaapimock/types/**/*.ts"
+    ".next-viaapimock/types/**/*.ts",
+    ".next-lan/types/**/*.ts",
+    ".next-tunnel/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

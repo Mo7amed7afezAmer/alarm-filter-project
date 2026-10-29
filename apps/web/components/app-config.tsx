@@ -5,7 +5,7 @@ import { createContext, useContext, type ReactNode } from "react";
 export interface AppConfig {
   timeZone: string;
   alertHours: number;
-  role: "VIEWER" | "OPERATOR" | "ADMIN" | "SUPER_ADMIN";
+  role: "VIEWER" | "OPERATOR" | "ADMIN" | "HOTLINE" | "SUPER_ADMIN";
   email: string;
   /** Office whose data the pages show, e.g. "DN/Kafr ElDawar", or a whole group "DN" (super
    *  admin); null = all offices (super admin); "" = none (account without an office). */

@@ -17,25 +17,32 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, ArrowDown, ArrowUp, Columns3, Inbox, RotateCcw, Settings2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Columns3,
+  Inbox,
+  RotateCcw,
+  Settings2,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PhoneLink } from "@/components/alarm-bits";
-import { useUiPrefs } from "@/components/ui-prefs";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const ALL_KEYS = HOURLY_COLUMNS.map((c) => c.key) as HourlyColumnKey[];
 
 /**
- * Visible table columns in the user's order (users.uiPrefs.hourly.tableColumns, also edited
- * in Settings → Hourly reports). A column switched on here is added at the end.
+ * Visible table columns in the office's order (hourly_settings tableColumns, also edited in
+ * Settings → Alarms, images & colours — admins only). A column switched on here is added at the end.
  */
 export function useColumnPrefs() {
-  const { prefs, update } = useUiPrefs();
-  const visible = prefs.hourly.tableColumns;
-  const save = (keys: HourlyColumnKey[]) =>
-    update((p) => ({ ...p, hourly: { ...p.hourly, tableColumns: keys } }));
+  const { hp, update } = useHourlyPrefs();
+  const visible = hp.tableColumns;
+  const save = (keys: HourlyColumnKey[]) => update((p) => ({ ...p, tableColumns: keys }));
   return { visible, setVisible: save, reset: () => save(HOURLY_DEFAULT_COLUMNS) };
 }
 
@@ -72,27 +79,29 @@ export function ColumnChooser({
             return (
               <label
                 key={c.key}
-                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-100/70"
               >
                 <input
                   type="checkbox"
                   checked={on}
                   disabled={on && visible.length === 1}
-                  onChange={() => onChange(on ? visible.filter((k) => k !== c.key) : [...visible, c.key])}
+                  onChange={() =>
+                    onChange(on ? visible.filter((k) => k !== c.key) : [...visible, c.key])
+                  }
                 />
                 {c.header}
               </label>
             );
           })}
           <button
-            className="mt-1 flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            className="mt-1 flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100/70"
             onClick={onReset}
           >
             <RotateCcw className="h-3.5 w-3.5" /> Reset to default
           </button>
           <Link
             href="/settings/hourly"
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-sky-700 hover:bg-slate-50"
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-sky-700 hover:bg-slate-100/70"
           >
             <Settings2 className="h-3.5 w-3.5" /> Column order and more…
           </Link>
@@ -120,10 +129,14 @@ function Cell({ row, k }: { row: HourlyRow; k: HourlyColumnKey }) {
         </span>
       );
     case "code":
-      return <span className="font-mono text-xs font-medium text-slate-900">{row.code || "—"}</span>;
+      return (
+        <span className="font-mono text-xs font-medium text-slate-900">{row.code || "—"}</span>
+      );
     case "vip":
       return row.vip ? (
-        <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">VIP</span>
+        <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+          VIP
+        </span>
       ) : (
         <span className="text-slate-400">{row.vip === null ? "" : "—"}</span>
       );
@@ -133,7 +146,10 @@ function Cell({ row, k }: { row: HourlyRow; k: HourlyColumnKey }) {
       return (
         <span className="flex gap-1">
           {row.technologies.map((t) => (
-            <span key={t} className="rounded border border-slate-300 bg-white/70 px-1 text-[10px] font-semibold">
+            <span
+              key={t}
+              className="rounded border border-slate-300 bg-white/70 px-1 text-[10px] font-semibold"
+            >
               {t}
             </span>
           ))}
@@ -221,7 +237,11 @@ export function HourlyTable({
     if (!onSort) return;
     const i = sort.findIndex((s) => s.key === key);
     if (shift) {
-      onSort(i >= 0 ? sort.map((s) => (s.key === key ? { ...s, desc: !s.desc } : s)) : [...sort, { key, desc: false }]);
+      onSort(
+        i >= 0
+          ? sort.map((s) => (s.key === key ? { ...s, desc: !s.desc } : s))
+          : [...sort, { key, desc: false }],
+      );
     } else {
       onSort([{ key, desc: i === 0 ? !sort[0]!.desc : false }]);
     }
@@ -259,7 +279,9 @@ export function HourlyTable({
                   <th
                     key={h.id}
                     onClick={(e) => clickHeader(key, e.shiftKey)}
-                    title={onSort ? "Click to sort · Shift+click to add a secondary sort" : undefined}
+                    title={
+                      onSort ? "Click to sort · Shift+click to add a secondary sort" : undefined
+                    }
                     className={cn(
                       "h-10 whitespace-nowrap border-b border-slate-200 px-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500",
                       onSort && "cursor-pointer select-none hover:text-slate-900",
@@ -267,7 +289,12 @@ export function HourlyTable({
                   >
                     <span className="inline-flex items-center gap-1">
                       {flexRender(h.column.columnDef.header, h.getContext())}
-                      {s && (s.desc ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />)}
+                      {s &&
+                        (s.desc ? (
+                          <ArrowDown className="h-3 w-3" />
+                        ) : (
+                          <ArrowUp className="h-3 w-3" />
+                        ))}
                       {s && sort.length > 1 && <sup className="text-[9px]">{idx + 1}</sup>}
                     </span>
                   </th>
@@ -333,7 +360,10 @@ export const orderedColumns = (keys: readonly HourlyColumnKey[]) =>
 export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[], fill?: CellFill) {
   const cols = orderedColumns(columns);
   const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
-  const tsv = [cols.map((c) => c.header), ...rows.map((r) => cols.map((c) => clean(hourlyCellText(r, c.key))))]
+  const tsv = [
+    cols.map((c) => c.header),
+    ...rows.map((r) => cols.map((c) => clean(hourlyCellText(r, c.key)))),
+  ]
     .map((line) => line.join("\t"))
     .join("\n");
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -357,7 +387,11 @@ export function tableClipboard(rows: HourlyRow[], columns: HourlyColumnKey[], fi
  * Copies rich (HTML) + plain text. navigator.clipboard needs a secure context (HTTPS or
  * localhost) — on http://<lan-ip> fall back to execCommand on a temporary selection.
  */
-export async function copyRows(rows: HourlyRow[], columns: HourlyColumnKey[], fill?: CellFill): Promise<void> {
+export async function copyRows(
+  rows: HourlyRow[],
+  columns: HourlyColumnKey[],
+  fill?: CellFill,
+): Promise<void> {
   const { tsv, html } = tableClipboard(rows, columns, fill);
   if (window.isSecureContext && navigator.clipboard && "ClipboardItem" in window) {
     await navigator.clipboard.write([

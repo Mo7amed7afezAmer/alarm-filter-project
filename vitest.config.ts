@@ -10,6 +10,7 @@ export default defineConfig({
     include: [
       "packages/*/src/**/*.test.ts",
       "apps/worker/src/**/*.test.ts",
+      "apps/whatsapp/src/**/*.test.ts",
       "apps/api/src/**/*.test.ts",
       "apps/web/{app,lib}/**/*.test.ts",
     ],

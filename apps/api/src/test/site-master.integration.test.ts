@@ -215,6 +215,31 @@ describe.skipIf(!url)("site master page API", () => {
     expect((await api.call("/api/me/ui-prefs")).body.prefs.alarms.view).toBe("mail");
   });
 
+  it("saves the Export image settings (columns, sort, office colours, share chats)", async () => {
+    as("VIEWER");
+    const { prefs } = (await api.call("/api/me/ui-prefs")).body;
+    const image = {
+      columns: ["time", "vip", "nodal"],
+      byOffice: true,
+      rowsPerImage: 60,
+      sort: "down",
+      officeColors: { "Kafr ElDawar": "#BBF7D0" },
+      shareAll: "https://chat.whatsapp.com/AbCdEfGhIj1234567890",
+      shareOffices: { "Kafr ElDawar": "01012345678" },
+      shareMode: "office",
+    };
+    await api.call(
+      "/api/me/ui-prefs",
+      json("PUT", { ...prefs, alarms: { ...prefs.alarms, image } }),
+    );
+    expect((await api.call("/api/me/ui-prefs")).body.prefs.alarms.image).toEqual({
+      ...image,
+      columns: ["time", "site", "vip", "nodal"],
+      officeColors: { "Kafr ElDawar": "#bbf7d0" },
+      shareOffices: { "Kafr ElDawar": "201012345678" },
+    });
+  });
+
   it("serves the import template to admins", async () => {
     as("ADMIN");
     const t = await api.call("/api/site-master/template");

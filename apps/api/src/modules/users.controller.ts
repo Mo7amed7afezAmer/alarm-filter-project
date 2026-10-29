@@ -8,7 +8,7 @@ import { canManage, checkAssignment, isSuperAdmin, ROLES, type Account } from "@
 import { prisma } from "@alarm/db";
 import type { AuthUser } from "../common/auth.js";
 import { HttpError, parseBody, searchParams } from "../common/http.js";
-import { CurrentUser, Roles } from "../common/nest.js";
+import { CurrentUser, Roles, NoHotline } from "../common/nest.js";
 import { availableOffices } from "../lib/office.js";
 
 const select = { id: true, email: true, role: true, office: true } as const;
@@ -16,12 +16,17 @@ const role = z.enum(ROLES);
 const password = z.string().min(8, "at least 8 characters").max(200);
 const office = z.string().trim().max(200).nullable().optional();
 
-const actorOf = (user: AuthUser): Account => ({ id: user.id, role: user.role, office: user.office });
+const actorOf = (user: AuthUser): Account => ({
+  id: user.id,
+  role: user.role,
+  office: user.office,
+});
 
 async function target(actor: Account, id: number): Promise<Account> {
   const user = await prisma.user.findUnique({ where: { id }, select });
   // 404 (not 403) for accounts outside the admin's office: they do not exist for them.
-  if (!user || (!canManage(actor, user) && actor.id !== id)) throw new HttpError(404, "User not found");
+  if (!user || (!canManage(actor, user) && actor.id !== id))
+    throw new HttpError(404, "User not found");
   if (actor.id === id) throw new HttpError(400, "You cannot change your own account here");
   return user;
 }
@@ -35,6 +40,7 @@ async function checkOffice(value: string | null) {
 
 @Controller("users")
 @Roles("ADMIN")
+@NoHotline()
 export class UsersController {
   /** Accounts the actor manages (plus themselves, read-only), and what they may assign. */
   @Get()
@@ -47,7 +53,11 @@ export class UsersController {
     });
     return {
       users: users.filter((u) => u.id === actor.id || canManage(actor, u)),
-      offices: isSuperAdmin(actor.role) ? await availableOffices() : actor.office ? [actor.office] : [],
+      offices: isSuperAdmin(actor.role)
+        ? await availableOffices()
+        : actor.office
+          ? [actor.office]
+          : [],
     };
   }
 
@@ -66,7 +76,9 @@ export class UsersController {
     const assigned = checkAssignment(actor, body.role, body.office);
     if ("error" in assigned) throw new HttpError(403, assigned.error);
     await checkOffice(assigned.office);
-    if (await prisma.user.findFirst({ where: { email: { equals: body.email, mode: "insensitive" } } })) {
+    if (
+      await prisma.user.findFirst({ where: { email: { equals: body.email, mode: "insensitive" } } })
+    ) {
       throw new HttpError(409, "A user with this email already exists");
     }
     const created = await prisma.user.create({
@@ -87,7 +99,12 @@ export class UsersController {
     const actor = actorOf(user);
     const body = await parseBody(
       req,
-      z.object({ id: z.number().int(), role: role.optional(), office, password: password.optional() }),
+      z.object({
+        id: z.number().int(),
+        role: role.optional(),
+        office,
+        password: password.optional(),
+      }),
     );
     const current = await target(actor, body.id);
     let data: { role?: Account["role"]; office?: string | null } = {};

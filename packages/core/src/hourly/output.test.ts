@@ -12,6 +12,9 @@ import {
   splitHourlyRows,
   visibleHourlyRows,
   type HourlyPrefs,
+  hourlyOfficeMode,
+  packOffices,
+  lighterColor,
 } from "./output.js";
 import { row } from "./test-fixtures.js";
 import { officeColor } from "./types.js";
@@ -60,14 +63,14 @@ describe("normalizeHourlyPrefs", () => {
     expect(p.sort).toBe("code");
     expect(p.colors).toEqual({
       enabled: false,
-      rules: [
-        { kind: "age", hours: 6, color: "FCA5A5", columns: ["alarmTime"] },
-        { kind: "office", office: "TANTA", color: "BFDBFE", columns: [] },
-      ],
+      rules: [{ kind: "age", hours: 6, color: "FCA5A5", columns: ["alarmTime"] }],
+      // the old office rule became TANTA's office colour; the empty one is dropped
+      offices: { TANTA: "BFDBFE" },
+      officeRowTint: true,
     });
-    expect(p.images.down).toEqual({ enabled: false, byOffice: true });
+    expect(p.images.down).toEqual({ enabled: false, byOffice: true, grouped: false });
     // POWER is never split per office
-    expect(p.images.power).toEqual({ enabled: true, byOffice: false });
+    expect(p.images.power).toEqual({ enabled: true, byOffice: false, grouped: false });
     expect(p.images.downSites).toEqual(DEFAULT_HOURLY_PREFS.images.downSites);
     expect(p.split).toEqual({ mode: "downVsRest", byOffice: true });
     expect(p.imageRowsPerPage).toBe(60);
@@ -114,6 +117,22 @@ describe("visibleHourlyRows", () => {
       visibleHourlyRows(rows, prefs({ hiddenSheets: ["2G_Down"] })).map((r) => r.alarmName),
     ).toEqual(["FIRE ALARM", "BCCH MISSING"]);
   });
+
+  it("a hidden name also hides the rows with that Alarm Text", () => {
+    const env = (alarmName: string, alarmText: string) =>
+      row({ alarmName, alarmText, category: "OTHER", sheets: ["Environmental"] });
+    const list = [
+      env("AIR CONDITION FAULT", "BASE STATION EXTERNAL ALARM NOTIFICATION"),
+      env("RECTIFIER MINOR ALARM", "BASE STATION EXTERNAL ALARM NOTIFICATION "),
+      env("FIRE ALARM", "FIRE ALARM"),
+    ];
+    expect(
+      visibleHourlyRows(
+        list,
+        prefs({ hiddenAlarms: ["BASE STATION EXTERNAL ALARM NOTIFICATION"] }),
+      ).map((r) => r.alarmName),
+    ).toEqual(["FIRE ALARM"]);
+  });
 });
 
 describe("sort by site code + numberSites", () => {
@@ -149,6 +168,38 @@ describe("colour rules", () => {
     { kind: "age", hours: 6, color: "FCA5A5", columns: [] },
   ]);
 
+  it("office colour list: Office cell in the colour, the rest lighter or plain", () => {
+    const p = normalizeHourlyPrefs({
+      colors: { rules: [], offices: { " tanta ": "#2563eb", BAD: "red" }, officeRowTint: true },
+    });
+    expect(p.colors.offices).toEqual({ TANTA: "2563EB" });
+    const tanta = row({ office: "TANTA" });
+    expect(hourlyCellFill(tanta, "office", ref, p)).toBe("2563EB");
+    expect(hourlyCellFill(tanta, "code", ref, p)).toBe(lighterColor("2563EB"));
+    const plain = { ...p, colors: { ...p.colors, officeRowTint: false } };
+    expect(hourlyCellFill(tanta, "code", ref, plain)).toBeNull();
+    // an office not in the list keeps the built-in colour on the whole row
+    const other = row({ office: "KAFR EL DAWAR" });
+    expect(hourlyCellFill(other, "code", ref, p)).toBe(officeColor("KAFR EL DAWAR"));
+    // an old office rule does not override a colour already in the list; age rules come first
+    const ruled = normalizeHourlyPrefs({
+      colors: {
+        rules: [
+          { kind: "office", office: "TANTA", color: "FFFFFF", columns: [] },
+          { kind: "age", hours: 1, color: "FCA5A5", columns: [] },
+        ],
+        offices: { TANTA: "2563EB" },
+      },
+    });
+    expect(ruled.colors.offices).toEqual({ TANTA: "2563EB" });
+    const fresh = row({ office: "TANTA", alarmTime: "2026-10-13 11:30:00" });
+    expect(hourlyCellFill(fresh, "office", ref, ruled)).toBe("2563EB");
+    const old = row({ office: "TANTA", alarmTime: "2026-10-13 08:00:00" });
+    expect(hourlyCellFill(old, "office", ref, ruled)).toBe("FCA5A5");
+    expect(lighterColor("000000", 0.5)).toBe("808080");
+    expect(normalizeHourlyPrefs({}).colors.officeRowTint).toBe(true);
+  });
+
   it("age: the highest period reached; never for an invalid clock, without a report time or when off", () => {
     const at = (alarmTime: string, extra = {}) =>
       hourlyCellFill(row({ alarmTime, ...extra }), "code", ref, age);
@@ -172,19 +223,35 @@ describe("colour rules", () => {
     expect(hourlyCellFill(old, "alarmTime", ref, p)).toBe("FDE68A");
     expect(hourlyCellFill(old, "code", ref, p)).toBe(officeColor(old.office));
   });
+});
 
-  it("office rules match the office name and win over age", () => {
-    const p = colors([
-      { kind: "age", hours: 1, color: "FCA5A5", columns: [] },
-      { kind: "office", office: "TANTA", color: "BFDBFE", columns: ["office"] },
-    ]);
-    const tanta = row({ office: "Tanta", alarmTime: "2026-10-13 08:00:00" });
-    expect(hourlyCellFill(tanta, "office", ref, p)).toBe("BFDBFE");
-    // other columns of the same row: the age rule
-    expect(hourlyCellFill(tanta, "code", ref, p)).toBe("FCA5A5");
-    expect(
-      hourlyCellFill(row({ office: "DUMIAT", alarmTime: "2026-10-13 08:00:00" }), "office", ref, p),
-    ).toBe("FCA5A5");
+describe("per-alarm category and site exceptions", () => {
+  const rows = [
+    row({ alarmName: "RECTIFIER MAJOR", category: "OTHER", code: "0001DE", siteName: "BH-A" }),
+    row({ alarmName: "RECTIFIER MAJOR", category: "OTHER", code: "0002DE", siteName: "BH-B" }),
+    row({ alarmName: "FIRE ALARM", category: "OTHER", code: "0003DE", siteName: "BH-C" }),
+  ];
+  it("changes the category of every row with that alarm name", () => {
+    const p = normalizeHourlyPrefs({ alarmCategories: { " rectifier major ": "POWER", X: "BAD" } });
+    expect(p.alarmCategories).toEqual({ "RECTIFIER MAJOR": "POWER" });
+    expect(visibleHourlyRows(rows, p).map((r) => r.category)).toEqual(["POWER", "POWER", "OTHER"]);
+    // a hidden category uses the changed one
+    const noPower = normalizeHourlyPrefs({
+      alarmCategories: { "RECTIFIER MAJOR": "POWER" },
+      hiddenCategories: ["POWER"],
+    });
+    expect(visibleHourlyRows(rows, noPower).map((r) => r.alarmName)).toEqual(["FIRE ALARM"]);
+  });
+
+  it("site exceptions flip a name: hidden still shows there, shown is hidden there", () => {
+    const hidden = normalizeHourlyPrefs({
+      hiddenAlarms: ["RECTIFIER MAJOR"],
+      alarmSites: { "RECTIFIER MAJOR": ["0002de"] },
+    });
+    expect(visibleHourlyRows(rows, hidden).map((r) => r.code)).toEqual(["0002DE", "0003DE"]);
+    const shown = normalizeHourlyPrefs({ alarmSites: { "FIRE ALARM": ["BH-C"], EMPTY: [] } });
+    expect(shown.alarmSites).toEqual({ "FIRE ALARM": ["BH-C"] });
+    expect(visibleHourlyRows(rows, shown).map((r) => r.code)).toEqual(["0001DE", "0002DE"]);
   });
 });
 
@@ -257,11 +324,11 @@ describe("hourlyImageGroups", () => {
     const g = hourlyImageGroups(
       rows,
       sets({
-        down: { enabled: true, byOffice: true },
-        downSites: { enabled: false, byOffice: false },
-        env: { enabled: false, byOffice: false },
-        envVipNodal: { enabled: true, byOffice: false },
-        power: { enabled: true, byOffice: false },
+        down: { enabled: true, byOffice: true, grouped: false },
+        downSites: { enabled: false, byOffice: false, grouped: false },
+        env: { enabled: false, byOffice: false, grouped: false },
+        envVipNodal: { enabled: true, byOffice: false, grouped: false },
+        power: { enabled: true, byOffice: false, grouped: false },
       }),
     );
     expect(labels(g)).toEqual([
@@ -273,9 +340,55 @@ describe("hourlyImageGroups", () => {
     expect(g.every((x) => x.rows[0]!.siteNo === 1)).toBe(true);
   });
 
+  it("office groups: whole offices packed into images of up to rows-per-image rows", () => {
+    const many = (office: string, n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        row({ office, category: "DOWN", code: `${office.slice(0, 2)}${i}DE` }),
+      );
+    const list = [
+      ...many("TANTA", 30),
+      ...many("DUMIAT", 12),
+      ...many("BENHA", 8),
+      ...many("SADAT", 25),
+      ...many("ZAGAZIG", 50),
+    ];
+    const g = hourlyImageGroups(
+      list,
+      sets({
+        down: { enabled: true, byOffice: false, grouped: true },
+        downSites: { enabled: false, byOffice: false, grouped: false },
+        env: { enabled: false, byOffice: false, grouped: false },
+      }),
+      40,
+    );
+    // ZAGAZIG (50 ≥ 40) alone; TANTA 30 + BENHA 8 = 38; SADAT 25 + DUMIAT 12 = 37
+    expect(labels(g)).toEqual([
+      ["DOWN · ZAGAZIG", 50],
+      ["DOWN · TANTA + BENHA", 38],
+      ["DOWN · SADAT + DUMIAT", 37],
+    ]);
+    expect(g.map((x) => x.office)).toEqual(["ZAGAZIG", null, null]);
+    // offices follow one another inside an image
+    expect(g[1]!.rows.map((r) => r.office).indexOf("BENHA")).toBe(30);
+    expect(hourlyOfficeMode({ enabled: true, byOffice: false, grouped: true })).toBe("groups");
+    // older stored groups are dropped; grouped wins over byOffice
+    const p = normalizeHourlyPrefs({
+      images: { down: { enabled: true, grouped: true, byOffice: true, groups: [["A"]] } },
+    });
+    expect(p.images.down).toEqual({ enabled: true, byOffice: false, grouped: true });
+  });
+
+  it("packOffices: first-fit, biggest first", () => {
+    const bins = packOffices([5, 30, 20, 15, 40, 1], (n) => n, 40);
+    expect(bins).toEqual([[40], [30, 5, 1], [20, 15]]);
+  });
+
   it("never returns zero groups", () => {
     const none = Object.fromEntries(
-      Object.keys(DEFAULT_HOURLY_PREFS.images).map((k) => [k, { enabled: false, byOffice: false }]),
+      Object.keys(DEFAULT_HOURLY_PREFS.images).map((k) => [
+        k,
+        { enabled: false, byOffice: false, grouped: false },
+      ]),
     ) as HourlyPrefs["images"];
     expect(hourlyImageGroups(rows, none)).toHaveLength(1);
     expect(hourlyImageGroups([], DEFAULT_HOURLY_PREFS.images)).toHaveLength(1);

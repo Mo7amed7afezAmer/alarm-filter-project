@@ -26,14 +26,17 @@ export const HOURLY_SPLIT_MODES = ["none", "downVsRest", "category"] as const;
 export type HourlySplitMode = (typeof HOURLY_SPLIT_MODES)[number];
 
 /**
- * A colour rule: rows older than `hours` (report time − alarm time), or rows of `office`, get
- * `color` ("RRGGBB", no '#') in the chosen `columns` — empty = the whole row. When an office rule
- * and an age rule both match a cell, the office rule wins (user, 2026-10-25); among age rules the
- * highest period reached wins.
+ * Colour rule: rows whose alarm is older than `hours` (report mail time − Alarm Time) get
+ * `color` ("RRGGBB", no '#') in the chosen `columns` — empty = the whole row; the highest
+ * period reached wins. Office colours are a separate list (`colors.offices`): the "office"
+ * rule kind was removed 2026-10-29 (user request), old office rules move into that list.
  */
-export type HourlyColorRule =
-  | { kind: "age"; hours: number; color: string; columns: HourlyColumnKey[] }
-  | { kind: "office"; office: string; color: string; columns: HourlyColumnKey[] };
+export type HourlyColorRule = {
+  kind: "age";
+  hours: number;
+  color: string;
+  columns: HourlyColumnKey[];
+};
 
 /** Default sort: newest alarm first, or by site code (a site's alarms sit together). */
 export const HOURLY_SORT_CHOICES = ["time", "code"] as const;
@@ -58,17 +61,82 @@ export const HOURLY_IMAGE_SETS_BY_OFFICE: readonly HourlyImageSet[] = [
 
 export const HOURLY_ROWS_PER_IMAGE = [25, 40, 60, 100] as const;
 
+/**
+ * One image set. Offices: all in one image, one image per office (`byOffice`), or office
+ * groups (`grouped`, user request 2026-10-29): offices packed together automatically, as many
+ * whole offices as fit in "Rows per image" (an office with more rows than that stands alone).
+ */
+export interface HourlyImageSetPrefs {
+  enabled: boolean;
+  byOffice: boolean;
+  grouped: boolean;
+}
+
+export type HourlyOfficeMode = "all" | "each" | "groups";
+
+export function hourlyOfficeMode(p: HourlyImageSetPrefs): HourlyOfficeMode {
+  return p.grouped ? "groups" : p.byOffice ? "each" : "all";
+}
+
+const setPrefs = (enabled: boolean): HourlyImageSetPrefs => ({
+  enabled,
+  byOffice: false,
+  grouped: false,
+});
+
+/**
+ * Items with a size → bins of at most `capacity`: biggest first, each into the first bin it
+ * still fits in (first-fit decreasing), else a new bin; an item of `capacity` or more gets a
+ * bin of its own. Bins in the order they were opened, items inside biggest first.
+ */
+export function packOffices<T>(
+  items: readonly T[],
+  size: (t: T) => number,
+  capacity: number,
+): T[][] {
+  const bins: { used: number; items: T[] }[] = [];
+  for (const it of [...items].sort((a, b) => size(b) - size(a))) {
+    const n = size(it);
+    const bin = n < capacity ? bins.find((b) => b.used + n <= capacity) : undefined;
+    if (bin) {
+      bin.used += n;
+      bin.items.push(it);
+    } else bins.push({ used: n, items: [it] });
+  }
+  return bins.map((b) => b.items);
+}
+
 export interface HourlyPrefs {
   /** Rows only in hidden sheets are left out (a row in several sheets stays if one is shown). */
   hiddenSheets: HourlySheet[];
   hiddenCategories: Category[];
   /** Exact alarmName values, upper-case. */
   hiddenAlarms: string[];
+  /**
+   * Category given to an alarm name instead of the one its sheet gives (upper-case name →
+   * DOWN | POWER | OTHER), user request 2026-10-29. Moves its rows between the image sets too.
+   */
+  alarmCategories?: Record<string, Category>;
+  /**
+   * Per alarm name, site codes or full site names where it does the opposite: a hidden alarm
+   * still shows there, a shown one is hidden (like Display alarms' site exceptions).
+   */
+  alarmSites?: Record<string, string[]>;
   /** Visible columns in order: the table, the images and the Excel export. */
   tableColumns: HourlyColumnKey[];
   sort: HourlySortChoice;
-  colors: { enabled: boolean; rules: HourlyColorRule[] };
-  images: Record<HourlyImageSet, { enabled: boolean; byOffice: boolean }>;
+  colors: {
+    enabled: boolean;
+    rules: HourlyColorRule[];
+    /**
+     * Colour of the Office cell per office (Site Master name, upper-case → "RRGGBB"); offices
+     * not listed keep the built-in office colour on the whole row (user request 2026-10-29).
+     */
+    offices?: Record<string, string>;
+    /** A listed office's other cells get a lighter shade of its colour (else no colour). */
+    officeRowTint?: boolean;
+  };
+  images: Record<HourlyImageSet, HourlyImageSetPrefs>;
   /** Groups of the Excel sheets (API export; not shown in the settings). */
   split: { mode: HourlySplitMode; byOffice: boolean };
   imageRowsPerPage: number;
@@ -80,16 +148,23 @@ export const DEFAULT_HOURLY_PREFS: HourlyPrefs = {
   hiddenAlarms: [],
   tableColumns: HOURLY_DEFAULT_COLUMNS,
   sort: "time",
-  colors: { enabled: true, rules: [{ kind: "age", hours: 3, color: "FCA5A5", columns: [] }] },
+  colors: {
+    enabled: true,
+    rules: [{ kind: "age", hours: 3, color: "FCA5A5", columns: [] }],
+    offices: {},
+    officeRowTint: true,
+  },
   images: {
-    down: { enabled: true, byOffice: false },
-    downSites: { enabled: true, byOffice: false },
-    env: { enabled: true, byOffice: false },
-    envVipNodal: { enabled: false, byOffice: false },
-    power: { enabled: false, byOffice: false },
+    down: setPrefs(true),
+    downSites: setPrefs(true),
+    env: setPrefs(true),
+    envVipNodal: setPrefs(false),
+    power: setPrefs(false),
   },
   split: { mode: "category", byOffice: false },
   imageRowsPerPage: 40,
+  alarmCategories: {},
+  alarmSites: {},
 };
 
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -126,18 +201,55 @@ function colorRule(v: unknown): HourlyColorRule | null {
   const color = hexColor(x.color);
   if (!color) return null;
   const columns = columnSubset(x.columns);
-  if (x.kind === "office") {
-    const office = typeof x.office === "string" ? x.office.trim().toUpperCase() : "";
-    return office ? { kind: "office", office, color, columns } : null;
-  }
+  // office rules are read into the office colour list instead (colorRules)
+  if (x.kind === "office") return null;
   const hours = Number(x.hours);
   return Number.isFinite(hours) && hours > 0 && hours <= 720
     ? { kind: "age", hours: Math.round(hours * 4) / 4, color, columns }
     : null;
 }
 
+/** "RRGGBB" mixed with white: `amount` 0 = the colour, 1 = white. */
+export function lighterColor(hex: string, amount = 0.65): string {
+  const n = parseInt(hex, 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((c) => mix(c).toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+}
+
+/** Office → colour list as stored: upper-case names, valid colours, at most 100. */
+function officeColorList(v: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(obj(v))
+      .map(([k, c]) => [k.trim().toUpperCase(), hexColor(c)] as const)
+      .filter((e): e is readonly [string, string] => !!e[0] && !!e[1])
+      .slice(0, 100),
+  );
+}
+
 /** Colour rules, also from the older `ageColors` shape (2026-10-22: periods + row / columns). */
 function colorRules(r: Record<string, unknown>): HourlyPrefs["colors"] {
+  const c0 = obj(r.colors);
+  // a former office rule becomes that office's colour, unless the list already has one
+  const fromRules = Object.fromEntries(
+    (Array.isArray(c0.rules) ? c0.rules : [])
+      .map(obj)
+      .filter((x) => x.kind === "office" && typeof x.office === "string")
+      .map((x) => [(x.office as string).trim().toUpperCase(), hexColor(x.color)] as const)
+      .filter((e): e is readonly [string, string] => !!e[0] && !!e[1]),
+  );
+  return {
+    ...colorRuleList(r),
+    offices: { ...fromRules, ...officeColorList(c0.offices) },
+    officeRowTint: typeof c0.officeRowTint === "boolean" ? c0.officeRowTint : true,
+  };
+}
+
+function colorRuleList(
+  r: Record<string, unknown>,
+): Pick<HourlyPrefs["colors"], "enabled" | "rules"> {
   const d = DEFAULT_HOURLY_PREFS.colors;
   const c = obj(r.colors);
   if (Array.isArray(c.rules))
@@ -194,12 +306,14 @@ export function normalizeHourlyPrefs(raw: unknown): HourlyPrefs {
     images: Object.fromEntries(
       HOURLY_IMAGE_SETS.map((k) => {
         const x = obj(images[k]);
+        const split = HOURLY_IMAGE_SETS_BY_OFFICE.includes(k);
+        const grouped = split && bool(x.grouped, false);
         return [
           k,
           {
             enabled: bool(x.enabled, d.images[k].enabled),
-            byOffice:
-              HOURLY_IMAGE_SETS_BY_OFFICE.includes(k) && bool(x.byOffice, d.images[k].byOffice),
+            byOffice: split && !grouped && bool(x.byOffice, d.images[k].byOffice),
+            grouped,
           },
         ];
       }),
@@ -213,6 +327,32 @@ export function normalizeHourlyPrefs(raw: unknown): HourlyPrefs {
     imageRowsPerPage: (HOURLY_ROWS_PER_IMAGE as readonly number[]).includes(perPage)
       ? perPage
       : d.imageRowsPerPage,
+    alarmCategories: Object.fromEntries(
+      Object.entries(obj(r.alarmCategories))
+        .map(([k, v]) => [k.trim().toUpperCase(), v] as const)
+        .filter(
+          (e): e is readonly [string, Category] => !!e[0] && (CATS as unknown[]).includes(e[1]),
+        )
+        .slice(0, 1000),
+    ),
+    alarmSites: Object.fromEntries(
+      Object.entries(obj(r.alarmSites))
+        .map(
+          ([k, v]) =>
+            [
+              k.trim().toUpperCase(),
+              [
+                ...new Set(
+                  strings(v)
+                    .map((s) => s.trim().toUpperCase())
+                    .filter(Boolean),
+                ),
+              ].slice(0, 200),
+            ] as const,
+        )
+        .filter(([k, v]) => k && v.length)
+        .slice(0, 1000),
+    ),
   };
 }
 
@@ -220,18 +360,40 @@ export function normalizeHourlyPrefs(raw: unknown): HourlyPrefs {
 export const hourlyHiddenCount = (p: HourlyPrefs): number =>
   p.hiddenSheets.length + p.hiddenCategories.length + p.hiddenAlarms.length;
 
-/** Rows left after the user's hidden sheets / categories / alarm names. */
+/** The category of a row after the user's per-alarm change (if any). */
+export function hourlyRowCategory(r: HourlyRow, p: HourlyPrefs): Category {
+  return p.alarmCategories?.[r.alarmName.trim().toUpperCase()] ?? r.category;
+}
+
+/**
+ * Rows left after the user's hidden sheets / categories / alarm names. A hidden name also hides
+ * the rows whose Alarm Text is that name (2026-10-25): hiding "BASE STATION EXTERNAL ALARM
+ * NOTIFICATION" removes every Environmental row that carries it, whatever its own alarm name.
+ */
 export function visibleHourlyRows(rows: readonly HourlyRow[], p: HourlyPrefs): HourlyRow[] {
-  if (!hourlyHiddenCount(p)) return [...rows];
+  const recat = Object.keys(p.alarmCategories ?? {}).length > 0;
+  const siteRules = p.alarmSites ?? {};
+  if (!hourlyHiddenCount(p) && !recat && !Object.keys(siteRules).length) return [...rows];
   const sheets = new Set<string>(p.hiddenSheets);
   const cats = new Set<string>(p.hiddenCategories);
   const alarms = new Set(p.hiddenAlarms);
-  return rows.filter(
-    (r) =>
-      !cats.has(r.category) &&
-      !alarms.has(r.alarmName.toUpperCase()) &&
-      (!sheets.size || r.sheets.some((s) => !sheets.has(s))),
-  );
+  const out: HourlyRow[] = [];
+  for (const r0 of rows) {
+    const r = recat ? { ...r0, category: hourlyRowCategory(r0, p) } : r0;
+    const name = r.alarmName.trim().toUpperCase();
+    const text = r.alarmText.trim().toUpperCase();
+    const typeHidden = cats.has(r.category) || alarms.has(name) || alarms.has(text);
+    // at its exception sites a name does the opposite (hidden → shown, shown → hidden)
+    const sites = siteRules[name] ?? siteRules[text];
+    const excepted =
+      !!sites &&
+      (sites.includes(r.code.trim().toUpperCase()) ||
+        sites.includes(r.siteName.trim().toUpperCase()));
+    if (typeHidden !== excepted) continue;
+    if (sheets.size && !r.sheets.some((s) => !sheets.has(s))) continue;
+    out.push(r);
+  }
+  return out;
 }
 
 /** Sort used when the user has not clicked a column header. */
@@ -292,9 +454,6 @@ export function hourlyCellFill(
   p: HourlyPrefs,
 ): string | null {
   if (p.colors.enabled) {
-    const office = row.office.trim().toUpperCase();
-    for (const rule of p.colors.rules)
-      if (rule.kind === "office" && rule.office === office && covers(rule, key)) return rule.color;
     const h = ref ? hourlyAgeHours(row, ref) : null;
     if (h !== null) {
       let best: { hours: number; color: string } | null = null;
@@ -309,6 +468,10 @@ export function hourlyCellFill(
       if (best) return best.color;
     }
   }
+  // the office's chosen colour: on its Office cell, a lighter shade (or none) elsewhere
+  const own = p.colors.offices?.[row.office.trim().toUpperCase()];
+  if (own)
+    return key === "office" ? own : p.colors.officeRowTint === false ? null : lighterColor(own);
   return officeColor(row.office);
 }
 
@@ -359,6 +522,31 @@ export function splitHourlyRows(
 const officeOrder = (a: string | null, b: string | null) =>
   !a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0;
 
+/**
+ * A set's rows split by its office mode: one part (all), one per office (A→Z, unknown last), or
+ * offices packed into parts of up to `rowsPerImage` rows (groups): inside a part the offices
+ * follow one another, biggest first, each keeping the chosen row order.
+ */
+function officeParts(
+  list: readonly HourlyRow[],
+  p: HourlyImageSetPrefs,
+  rowsPerImage: number,
+): { name: string; office: string | null; rows: HourlyRow[] }[] {
+  const mode = hourlyOfficeMode(p);
+  if (mode === "all") return [{ name: "", office: null, rows: [...list] }];
+  const perOffice = [...new Set(list.map((r) => r.office))].sort(officeOrder).map((office) => ({
+    name: office || "Unknown office",
+    office,
+    rows: list.filter((r) => r.office === office),
+  }));
+  if (mode === "each") return perOffice;
+  return packOffices(perOffice, (o) => o.rows.length, rowsPerImage).map((bin) => ({
+    name: bin.map((o) => o.name).join(" + "),
+    office: bin.length === 1 ? bin[0]!.office : null,
+    rows: bin.flatMap((o) => o.rows),
+  }));
+}
+
 export const HOURLY_IMAGE_SET_LABEL: Record<HourlyImageSet, string> = {
   down: "DOWN",
   downSites: "DOWN SITES",
@@ -377,6 +565,7 @@ export const HOURLY_IMAGE_SET_LABEL: Record<HourlyImageSet, string> = {
 export function hourlyImageGroups(
   rows: readonly HourlyRow[],
   images: HourlyPrefs["images"],
+  rowsPerImage: number = DEFAULT_HOURLY_PREFS.imageRowsPerPage,
 ): HourlyGroup[] {
   const down = rows.filter((r) => r.category === "DOWN");
   const env = rows.filter((r) => r.category !== "DOWN");
@@ -403,14 +592,10 @@ export function hourlyImageGroups(
       if (sites.length) out.push({ label, office: null, categories, rows: sites });
       continue;
     }
-    const offices: (string | null)[] = images[set].byOffice
-      ? [...new Set(list.map((r) => r.office))].sort(officeOrder)
-      : [null];
-    for (const office of offices) {
-      const g = office === null ? list : list.filter((r) => r.office === office);
-      if (!g.length) continue;
-      const name = office === null ? label : `${label} · ${office || "Unknown office"}`;
-      out.push({ label: name, office, categories, rows: numberSites(g) });
+    for (const part of officeParts(list, images[set], rowsPerImage)) {
+      if (!part.rows.length) continue;
+      const name = part.name ? `${label} · ${part.name}` : label;
+      out.push({ label: name, office: part.office, categories, rows: numberSites(part.rows) });
     }
   }
   return out.length ? out : [{ label: "", office: null, categories: null, rows: [] }];

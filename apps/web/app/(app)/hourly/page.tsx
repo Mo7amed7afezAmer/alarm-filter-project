@@ -36,7 +36,8 @@ function ReportsView() {
   const page = Number(params.get("page") ?? 1);
   const today = dateInputValue(new Date(), timeZone);
 
-  const q = new URLSearchParams({ page: String(page) });
+  // 10 reports per page (user request 2026-10-29)
+  const q = new URLSearchParams({ page: String(page), pageSize: "10" });
   if (from) q.set("from", dayBound(from, timeZone, false));
   if (to) q.set("to", dayBound(to, timeZone, true));
   const { data, error, loading, reload } = usePoll<ListResponse>(`/api/hourly-reports?${q}`, 60_000);

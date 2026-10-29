@@ -12,6 +12,7 @@ describe("normalizeUiPrefs", () => {
   it("keeps valid values", () => {
     const p = normalizeUiPrefs({
       theme: "light",
+      borders: false,
       alarms: {
         view: "table",
         siteInfoIcons: true,
@@ -23,6 +24,7 @@ describe("normalizeUiPrefs", () => {
     });
     expect(p).toEqual({
       theme: "light",
+      borders: false,
       alarms: {
         view: "table",
         siteInfoIcons: true,
@@ -30,9 +32,18 @@ describe("normalizeUiPrefs", () => {
         mailGroupBySite: true,
         hiddenColumns: { active: ["region", "age"], cleared: ["clearType"] },
         mail: { ...DEFAULT_UI_PREFS.alarms.mail, phone: false, received: true },
+        image: DEFAULT_UI_PREFS.alarms.image,
+        sendChat: "",
       },
       hourly: DEFAULT_HOURLY_PREFS,
+      hourlyShare: { mode: "all", all: "", offices: {} },
     });
+  });
+
+  it("is borderless unless borders are turned on", () => {
+    expect(normalizeUiPrefs(null).borders).toBe(false);
+    expect(normalizeUiPrefs({ borders: "yes" }).borders).toBe(false);
+    expect(normalizeUiPrefs({ borders: true }).borders).toBe(true);
   });
 
   it("defaults to the mail view with age, cell / device and the call button", () => {

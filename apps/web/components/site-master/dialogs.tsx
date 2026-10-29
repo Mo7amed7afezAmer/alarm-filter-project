@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
+import { useWhatsAppSender } from "@/components/whatsapp";
 
 export interface Site {
   code: string;
@@ -89,6 +90,7 @@ export function SiteDetailsDialog({
   onDelete: () => void;
 }) {
   const message = siteWhatsAppText(s);
+  const { ready: linked } = useWhatsAppSender();
   const text = (v: string | null) => v ?? dash;
   const rows: [string, ReactNode][] = [
     ["Office", <OfficeName key="o" office={s.office} />],
@@ -136,15 +138,18 @@ export function SiteDetailsDialog({
           >
             Copy
           </CopyButton>
-          <a
-            href={`https://wa.me/?text=${encodeURIComponent(message)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            <MessageCircle className="h-4 w-4" />
-            WhatsApp
-          </a>
+          {/* only while the user's own WhatsApp number is linked */}
+          {linked && (
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(message)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              <MessageCircle className="h-4 w-4" />
+              WhatsApp
+            </a>
+          )}
         </>
       }
     >

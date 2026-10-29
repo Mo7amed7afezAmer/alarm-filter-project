@@ -18,15 +18,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { isOfficeGroup, ROLE_LABEL } from "@alarm/core";
+import { canSeePage } from "@/lib/pages";
 import { cn } from "@/lib/utils";
 import { useAppConfig } from "./app-config";
 import { useUiPrefs } from "./ui-prefs";
 import { NotificationBell } from "./notification-bell";
+import { clearOfflinePages, InstallAppButton } from "./pwa";
 
 const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/alarms", label: "Alarms", icon: BellRing },
   { href: "/cleared", label: "Cleared", icon: CircleCheck },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/hourly", label: "Hourly Alarms", icon: FileClock },
   { href: "/site-master", label: "Site Master", icon: Building2 },
   // Every user: personal settings (theme, alarm display, notifications); admins see more there.
@@ -99,7 +101,7 @@ function SidebarContent({ bell }: { bell: boolean }) {
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
-        {LINKS.map(({ href, label, icon: Icon }) => (
+        {LINKS.filter(({ href }) => canSeePage(role, href)).map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
@@ -114,6 +116,10 @@ function SidebarContent({ bell }: { bell: boolean }) {
           </Link>
         ))}
       </nav>
+
+      <div className="px-2 pb-2">
+        <InstallAppButton className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-white" />
+      </div>
 
       <div className="flex items-center gap-2 border-t border-sidebar-border px-3 py-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold uppercase text-white">
@@ -131,7 +137,7 @@ function SidebarContent({ bell }: { bell: boolean }) {
           className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
           title="Sign out"
           aria-label="Sign out"
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => void clearOfflinePages().then(() => signOut({ callbackUrl: "/login" }))}
         >
           <LogOut className="h-4 w-4" />
         </button>

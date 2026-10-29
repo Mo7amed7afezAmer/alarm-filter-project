@@ -13,6 +13,7 @@ import { SettingsController } from "./modules/settings.controller.js";
 import { SiteMasterController } from "./modules/site-master.controller.js";
 import { StatsController } from "./modules/stats.controller.js";
 import { UsersController } from "./modules/users.controller.js";
+import { WhatsAppController } from "./modules/whatsapp.controller.js";
 
 @Module({
   controllers: [
@@ -25,6 +26,7 @@ import { UsersController } from "./modules/users.controller.js";
     GmailController,
     HourlyController,
     SiteMasterController,
+    WhatsAppController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AuthGuard },

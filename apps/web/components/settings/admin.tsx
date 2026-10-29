@@ -2,13 +2,15 @@
 
 // Administration sections of /settings (moved from the old one-page settings).
 
-import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAppConfig } from "@/components/app-config";
 import { Button } from "@/components/ui/button";
+import { Notice, SectionHeader } from "@/components/settings/section";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { usePoll } from "@/components/use-poll";
-import { ROLE_LABEL, ROLES, type Role } from "@alarm/core";
+import { ROLE_LABEL, ROLES, type Role, seesAllOffices } from "@alarm/core";
 
 type Category = "DOWN" | "POWER" | "OTHER";
 interface Rule {
@@ -39,11 +41,14 @@ export async function send(url: string, method: string, body?: unknown) {
   return json;
 }
 
-export function RulesEditor() {
+/** Rules list with the page header; the category filter and search sit on the header's right. */
+export function RulesEditor({ title, subtitle }: { title: string; subtitle?: ReactNode }) {
   const { data, reload } = usePoll<{ rules: Rule[] }>("/api/rules", 0);
   const [rules, setRules] = useState<Rule[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cat, setCat] = useState<Category | "ALL">("ALL");
+  const [q, setQ] = useState("");
   useEffect(() => {
     if (data)
       setRules(
@@ -69,77 +74,124 @@ export function RulesEditor() {
     }
   }
 
-  const sorted = rules.map((r, i) => ({ r, i })).sort((a, b) => a.r.priority - b.r.priority);
+  const query = q.trim().toUpperCase();
+  // a new (empty) rule always shows, so "Add rule" is visible whatever the filter
+  const sorted = rules
+    .map((r, i) => ({ r, i }))
+    .filter(
+      ({ r }) =>
+        !r.pattern.trim() ||
+        ((cat === "ALL" || r.category === cat) &&
+          (!query || r.pattern.toUpperCase().includes(query))),
+    )
+    .sort((a, b) => a.r.priority - b.r.priority);
+  const filtered = cat !== "ALL" || !!query;
   return (
-    <Card className="rounded-xl border-slate-200 shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-base">Classification rules</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Case-insensitive “contains” match on the alarm name. Lowest priority number is checked
-          first; no match → OTHER.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="hidden grid-cols-[1fr_8rem_6rem_2.5rem] gap-2 text-xs font-medium text-muted-foreground sm:grid">
-          <span>Pattern</span>
-          <span>Category</span>
-          <span>Priority</span>
-          <span />
-        </div>
-        {sorted.map(({ r, i }) => (
-          <div
-            key={i}
-            className="grid grid-cols-[1fr_1fr_2.5rem] gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-[1fr_8rem_6rem_2.5rem] sm:rounded-none sm:border-0 sm:p-0 [&>*:first-child]:col-span-3 sm:[&>*:first-child]:col-span-1"
-          >
-            <Input value={r.pattern} onChange={(e) => update(i, { pattern: e.target.value })} />
+    <>
+      <SectionHeader
+        title={title}
+        subtitle={subtitle}
+        action={
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {filtered && (
+              <span className="text-sm text-muted-foreground">
+                {sorted.length} of {rules.length} rules
+              </span>
+            )}
             <select
               className="h-9 rounded-md border bg-background px-2 text-sm"
-              value={r.category}
-              onChange={(e) => update(i, { category: e.target.value as Category })}
+              value={cat}
+              onChange={(e) => setCat(e.target.value as Category | "ALL")}
+              aria-label="Category"
             >
+              <option value="ALL">All categories</option>
               <option value="DOWN">DOWN</option>
               <option value="POWER">POWER</option>
               <option value="OTHER">OTHER</option>
             </select>
-            <Input
-              type="number"
-              value={r.priority}
-              onChange={(e) => update(i, { priority: Number(e.target.value) })}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              title="Remove"
-              onClick={() => setRules((rs) => rs.filter((_, j) => j !== i))}
-            >
-              ✕
-            </Button>
+            <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search pattern"
+                className="pl-8"
+                aria-label="Search pattern"
+              />
+            </div>
           </div>
-        ))}
-        <div className="flex flex-wrap items-center gap-2 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setRules((rs) => [
-                ...rs,
-                {
-                  pattern: "",
-                  category: "DOWN",
-                  priority: Math.max(0, ...rs.map((r) => r.priority)) + 10,
-                },
-              ])
-            }
-          >
-            + Add rule
-          </Button>
-          <Button size="sm" onClick={() => void save()} disabled={busy}>
-            {busy ? "Saving…" : "Save rules"}
-          </Button>
-          {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
-        </div>
-      </CardContent>
-    </Card>
+        }
+      />
+      <Card className="rounded-xl border-slate-200 shadow-sm">
+        <CardContent className="space-y-2 pt-6">
+          <Notice>
+            A rule matches when the alarm name <b>contains</b> its pattern (any case). Lowest
+            priority number is checked first; no match → OTHER.
+          </Notice>
+          <div className="hidden grid-cols-[1fr_8rem_6rem_2.5rem] gap-2 text-xs font-medium text-muted-foreground sm:grid">
+            <span>Pattern</span>
+            <span>Category</span>
+            <span>Priority</span>
+            <span />
+          </div>
+          {sorted.map(({ r, i }) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_1fr_2.5rem] gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-[1fr_8rem_6rem_2.5rem] sm:rounded-none sm:border-0 sm:p-0 [&>*:first-child]:col-span-3 sm:[&>*:first-child]:col-span-1"
+            >
+              <Input value={r.pattern} onChange={(e) => update(i, { pattern: e.target.value })} />
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={r.category}
+                onChange={(e) => update(i, { category: e.target.value as Category })}
+              >
+                <option value="DOWN">DOWN</option>
+                <option value="POWER">POWER</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+              <Input
+                type="number"
+                value={r.priority}
+                onChange={(e) => update(i, { priority: Number(e.target.value) })}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Remove"
+                onClick={() => setRules((rs) => rs.filter((_, j) => j !== i))}
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+          {filtered && !sorted.length && (
+            <p className="py-4 text-center text-sm text-muted-foreground">No rule matches.</p>
+          )}
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setRules((rs) => [
+                  ...rs,
+                  {
+                    pattern: "",
+                    category: cat === "ALL" ? "DOWN" : cat,
+                    priority: Math.max(0, ...rs.map((r) => r.priority)) + 10,
+                  },
+                ])
+              }
+            >
+              + Add rule
+            </Button>
+            <Button size="sm" onClick={() => void save()} disabled={busy}>
+              {busy ? "Saving…" : "Save rules"}
+            </Button>
+            {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
@@ -267,7 +319,7 @@ export function Users() {
                         <select
                           className="h-8 max-w-[12rem] rounded-md border bg-background px-2"
                           value={u.office ?? ""}
-                          disabled={self || u.role === "SUPER_ADMIN"}
+                          disabled={self || seesAllOffices(u.role)}
                           onChange={(e) =>
                             void run(
                               () =>
@@ -280,7 +332,7 @@ export function Users() {
                           }
                         >
                           <option value="">
-                            {u.role === "SUPER_ADMIN" ? "all offices" : "— no office —"}
+                            {seesAllOffices(u.role) ? "all offices" : "— no office —"}
                           </option>
                           {[...new Set([...offices, ...(u.office ? [u.office] : [])])].map((o) => (
                             <option key={o} value={o}>
@@ -373,7 +425,7 @@ export function Users() {
               </option>
             ))}
           </select>
-          {isSuper && form.role !== "SUPER_ADMIN" && (
+          {isSuper && !seesAllOffices(form.role) && (
             <select
               className="h-9 rounded-md border bg-background px-2 text-sm"
               required

@@ -6,6 +6,7 @@ import {
   Eye,
   FileSpreadsheet,
   Mail,
+  MessageCircle,
   Palette,
   Tags,
   Users,
@@ -22,6 +23,8 @@ import { cn } from "@/lib/utils";
 type Role = AppConfig["role"];
 const ADMINS: Role[] = ["ADMIN", "SUPER_ADMIN"];
 const SUPER: Role[] = ["SUPER_ADMIN"];
+/** Everyone but viewers (each links their own WhatsApp number). */
+const SENDERS: Role[] = ["OPERATOR", "ADMIN", "HOTLINE", "SUPER_ADMIN"];
 
 interface Item {
   href: string;
@@ -38,6 +41,8 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
     items: [
       { href: "/settings/general", label: "General", icon: Palette },
       { href: "/settings/notifications", label: "Notifications", icon: Bell },
+      // each account links its own number (not a viewer)
+      { href: "/settings/whatsapp", label: "WhatsApp sender", icon: MessageCircle, roles: SENDERS },
     ],
   },
   {
@@ -54,7 +59,14 @@ const SETTINGS_GROUPS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Hourly reports",
-    items: [{ href: "/settings/hourly", label: "Alarms, images & colours", icon: FileSpreadsheet }],
+    items: [
+      {
+        href: "/settings/hourly",
+        label: "Alarms, images & colours",
+        icon: FileSpreadsheet,
+        roles: ADMINS,
+      },
+    ],
   },
   {
     title: "Administration",

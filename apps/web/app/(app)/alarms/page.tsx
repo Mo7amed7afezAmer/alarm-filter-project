@@ -3,11 +3,12 @@
 // Active alarms: category tabs (All / Down / Power / Other, with counts), then search, a site-tag
 // filter and — for a super admin viewing all offices — an office filter. Table or Mail view and
 // the mail card parts are set in Settings → Display alarms.
-import { isOfficeGroup } from "@alarm/core";
+import { isOfficeGroup, seesAllOffices } from "@alarm/core";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Suspense, useMemo } from "react";
 import { AlarmCard, AlarmName, Mono, siteMasterColumns, SiteCell } from "@/components/alarm-bits";
+import { AlarmImageButton } from "@/components/alarm-image";
 import { AlarmMailList, type MailAlarm } from "@/components/alarm-mail";
 import { useAppConfig } from "@/components/app-config";
 import { CategoryBadge } from "@/components/badges";
@@ -123,7 +124,7 @@ function AlarmsView() {
   const display = prefs.alarms;
   const icons = display.siteInfoIcons;
   // Office filter only for a super admin looking at every office or a whole group (DN / DS).
-  const pickOffice = role === "SUPER_ADMIN" && (viewOffice === null || isOfficeGroup(viewOffice));
+  const pickOffice = seesAllOffices(role) && (viewOffice === null || isOfficeGroup(viewOffice));
   const f = (k: string) => params.get(k) ?? "";
   const category = f("category");
   const page = Number(params.get("page") ?? 1);
@@ -201,10 +202,17 @@ function AlarmsView() {
     [timeZone, now, alertHours, icons],
   );
 
-  const exportQuery = new URLSearchParams(query);
-  exportQuery.delete("page");
-  exportQuery.delete("pageSize");
-  exportQuery.set("status", "active");
+  // the image takes every category of a site; the selected tab only picks the sites
+  const imageQuery = new URLSearchParams(query);
+  for (const k of ["category", "page", "pageSize"]) imageQuery.delete(k);
+  // the image window adds its own category choice in front
+  const imageSubtitle = [
+    f("q") && `Search: ${f("q")}`,
+    f("flag") && `Site: ${f("flag").toUpperCase()}`,
+    pickOffice && f("office") && `Office: ${f("office").split("/").pop()}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <>
@@ -229,12 +237,12 @@ function AlarmsView() {
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
               Refresh
             </Button>
-            <Button size="sm" variant="outline" className="bg-white" asChild>
-              <a href={`/api/export?${exportQuery}`}>
-                <Download className="h-4 w-4" />
-                Export
-              </a>
-            </Button>
+            <AlarmImageButton
+              query={imageQuery}
+              category={category}
+              subtitle={imageSubtitle}
+              pickOffice={pickOffice}
+            />
           </>
         }
       />

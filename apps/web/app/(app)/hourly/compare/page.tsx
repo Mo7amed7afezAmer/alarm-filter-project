@@ -20,7 +20,7 @@ import { api, useHourlyUrl, type ReportItem } from "@/components/hourly/client";
 import { ColumnChooser, HourlyTable, useColumnPrefs } from "@/components/hourly/hourly-table";
 import { MultiSelect } from "@/components/hourly/multi-select";
 import { PageHeader } from "@/components/page-header";
-import { useUiPrefs } from "@/components/ui-prefs";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 import { formatDateTime } from "@/lib/format";
 
 interface Diff {
@@ -30,7 +30,7 @@ interface Diff {
 
 function CompareView() {
   const { timeZone } = useAppConfig();
-  const hp = useUiPrefs().prefs.hourly;
+  const { hp } = useHourlyPrefs();
   const defaultSort = useMemo(() => hourlySortFor(hp), [hp]);
   const { params, filters, sort, setMany, setOne, setSort } = useHourlyUrl(defaultSort);
   const cols = useColumnPrefs();

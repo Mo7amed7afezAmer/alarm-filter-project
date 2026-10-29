@@ -27,8 +27,10 @@ const reprocessQuery = z.object({ days: z.coerce.number().int().min(1).max(90).d
 const displayBody = z.object({
   hiddenCategories: z.array(category).max(3),
   hiddenAlarmNames: z.array(z.string().trim().min(1).max(200)).max(1000),
-  /** Site codes / full site names where the hidden types still show. */
-  exceptSites: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+  /** Per alarm name: site codes / full site names where it is flipped (hidden ↔ shown). */
+  siteExceptions: z
+    .record(z.string().max(200), z.array(z.string().trim().min(1).max(200)).max(200))
+    .default({}),
 });
 
 async function listRules() {
@@ -73,7 +75,7 @@ export class SettingsController {
 
   /** Queues a rebuild; the worker runs it on its next tick and clears reprocessDays. */
   @Post("reprocess")
-  @Roles("SUPER_ADMIN")
+  @Roles("HOTLINE")
   @HttpCode(202)
   async reprocess(@Req() req: Request) {
     const { days } = parseQuery(req, reprocessQuery);
@@ -120,7 +122,7 @@ export class SettingsController {
    *  office group ("DN"), or null/"" = all offices.
    *  Office users are fixed to their own office. */
   @Put("settings/office")
-  @Roles("SUPER_ADMIN")
+  @Roles("HOTLINE")
   async putOffice(@Req() req: Request, @CurrentUser() user: AuthUser) {
     const { office } = await parseBody(
       req,

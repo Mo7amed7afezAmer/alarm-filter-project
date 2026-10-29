@@ -17,6 +17,7 @@ import {
   type HourlyColumnKey,
   type HourlyMeta,
   type HourlyRow,
+  seesAllOffices,
 } from "@alarm/core";
 import {
   ChevronDown,
@@ -43,7 +44,7 @@ import {
 import { ColumnChooser, HourlyTable, useColumnPrefs } from "@/components/hourly/hourly-table";
 import { MultiSelect } from "@/components/hourly/multi-select";
 import { TableImageButton } from "@/components/hourly/table-image";
-import { useUiPrefs } from "@/components/ui-prefs";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
@@ -88,8 +89,8 @@ function ResultsView({ gmailId }: { gmailId: string }) {
   const { timeZone, role } = useAppConfig();
   const canProcess = role !== "VIEWER";
   // Office users only ever see their own office's rows — the filter is for the super admin.
-  const pickOffice = role === "SUPER_ADMIN";
-  const hp = useUiPrefs().prefs.hourly;
+  const pickOffice = seesAllOffices(role);
+  const { hp, canEdit } = useHourlyPrefs();
   const defaultSort = useMemo(() => hourlySortFor(hp), [hp]);
   const { filters, sort, setMany, setOne, setSort, clear, active } = useHourlyUrl(defaultSort);
   const cols = useColumnPrefs();
@@ -311,13 +312,16 @@ function ResultsView({ gmailId }: { gmailId: string }) {
                   className={cn("h-3.5 w-3.5 transition-transform", showFilters && "rotate-180")}
                 />
               </Button>
-              <div className="shrink-0">
-                <ColumnChooser
-                  visible={cols.visible}
-                  onChange={cols.setVisible}
-                  onReset={cols.reset}
-                />
-              </div>
+              {/* the columns are the office's shared setting — admins change them */}
+              {canEdit && (
+                <div className="shrink-0">
+                  <ColumnChooser
+                    visible={cols.visible}
+                    onChange={cols.setVisible}
+                    onReset={cols.reset}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Filters: one even grid, two rows on a laptop, one on a wide screen; the

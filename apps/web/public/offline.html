@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f1b2d" />
+    <title>Alarm Filter — offline</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0f1b2d;
+        color: #e2e8f0;
+        font: 16px/1.5 "Segoe UI", Roboto, Arial, sans-serif;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .card {
+        max-width: 420px;
+        text-align: center;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 16px 0 8px;
+        color: #f8fafc;
+      }
+      p {
+        margin: 0 0 6px;
+        color: #94a3b8;
+      }
+      button {
+        margin-top: 20px;
+        padding: 10px 22px;
+        border: 0;
+        border-radius: 8px;
+        background: #0d9488;
+        color: #fff;
+        font: 600 15px "Segoe UI", Roboto, Arial, sans-serif;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You are offline</h1>
+      <p>Alarm Filter needs the network to show live alarms.</p>
+      <p dir="rtl">أنت غير متصل بالشبكة — حاول تاني لما الاتصال يرجع.</p>
+      <button onclick="location.reload()">Try again</button>
+    </div>
+  </body>
+</html>

@@ -333,36 +333,53 @@ describe.skipIf(!url)("API integration", () => {
       expect(r3.body.items.map((a: { site: string }) => a.site)).toEqual([`${PREFIX}-B`]);
     });
 
-    it("hidden types still show at the exception sites (admin and personal filters each)", async () => {
+    it("flips an alarm name at its exception sites (admin and personal filters each)", async () => {
       as("VIEWER");
       const sites = (body: { items: { site: string }[] }) => body.items.map((a) => a.site).sort();
       const path = `/api/alarms/active?site=${PREFIX}`;
-      // admin hides DOWN except at site A (full site name)
+      const LINK = "S_D_N_BTS O&M LINK FAILURE";
+      const RECT = "S_D_N_RECTIFIER MAJOR ALARM";
+      // admin hides LINK FAILURE everywhere except at site A (full site name)
       await prisma.systemStatus.update({
         where: { id: 1 },
         data: {
-          displayFilter: { hiddenCategories: ["DOWN"], hiddenAlarmNames: [], exceptSites: [`${PREFIX}-A`] },
+          displayFilter: {
+            hiddenCategories: [],
+            hiddenAlarmNames: [LINK],
+            siteExceptions: { [LINK]: [`${PREFIX}-A`] },
+          },
         },
       });
       expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`, `${PREFIX}-B`]);
-      // the daily chart (raw SQL) applies the same rule: no error, A still counted
+      // the daily chart (raw SQL) applies the same rule
       expect((await get("/api/stats/daily?days=2")).status).toBe(200);
 
-      // the user hides POWER for themselves, with no exception → B goes; the admin's
-      // exception for A does not lift the user's own filter (and the other way round)
+      // the user keeps RECTIFIER shown but hides it at site B → B goes; the admin's exception
+      // for A is not touched by the user's filter
       await prisma.user.update({
         where: { id: Number(users.VIEWER) },
-        data: { displayPrefs: { hiddenCategories: ["POWER"], hiddenAlarmNames: [], exceptSites: [] } },
+        data: {
+          displayPrefs: {
+            hiddenCategories: [],
+            hiddenAlarmNames: [],
+            siteExceptions: { [RECT]: [`${PREFIX}-B`] },
+          },
+        },
       });
       try {
         expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`]);
-        // PUT /api/me/display stores the exceptions (upper-cased)
+        expect((await get("/api/stats/daily?days=2")).status).toBe(200);
+        // PUT /api/me/display stores the exceptions (upper-cased); another site → B is back
         const put = await api.call("/api/me/display", {
           method: "PUT",
-          json: { hiddenCategories: ["POWER"], hiddenAlarmNames: [], exceptSites: [`${PREFIX.toLowerCase()}-b`] },
+          json: {
+            hiddenCategories: [],
+            hiddenAlarmNames: [],
+            siteExceptions: { [RECT]: [`${PREFIX.toLowerCase()}-zz`] },
+          },
         });
         expect(put.status).toBe(200);
-        expect(put.body.exceptSites).toEqual([`${PREFIX}-B`]);
+        expect(put.body.siteExceptions).toEqual({ [RECT]: [`${PREFIX}-ZZ`] });
         expect(sites((await get(path)).body)).toEqual([`${PREFIX}-A`, `${PREFIX}-B`]);
       } finally {
         await prisma.user.update({
