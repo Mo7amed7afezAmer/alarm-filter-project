@@ -1,0 +1,301 @@
+// HTTP tests for hourly reports with a mocked Gmail layer (the real fixture RAR served from
+// tests/fixtures) against the separate alarms_test database. Runs only when
+// TEST_DATABASE_URL is set and the fixtures exist. Touches only site_master rows whose codes
+// come from the fixture SiteMaster file, and removes them afterwards.
+import ExcelJS from "exceljs";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createHarness } from "./harness.js";
+
+const url = process.env.TEST_DATABASE_URL;
+const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../tests/fixtures");
+const SITE_MASTER = path.join(FIXTURES, "SiteMaster_KafrElDawar.xlsx");
+const hasFixtures =
+  existsSync(SITE_MASTER) &&
+  ["NSN Update_Output.rar", "NSN_Update_Output.rar"].some((n) => existsSync(path.join(FIXTURES, n)));
+
+const api = createHarness();
+
+const PREFIX = "ZZ-HOURLYTEST";
+// Office users of the fixture's office; the super admin sees every office.
+const OFFICE = "DN/Kafr ElDawar";
+let users: import("./test-users.js").TestUsers;
+const as = (role: keyof typeof users) => (api.session.current = { user: { id: users[role] } });
+
+describe.skipIf(!url || !hasFixtures)("hourly report routes", () => {
+  let prisma: typeof import("@alarm/db").prisma;
+  let hourlyCache: typeof import("../lib/hourly.js").hourlyCache;
+  let gmailId = "";
+  let importedCodes: string[] = [];
+  let seededNormalizations = false;
+
+  const call = async (p: string, init?: RequestInit) => {
+    const r = await api.call(p, init);
+    return { status: r.status, res: r.raw, body: r.body ?? null };
+  };
+  const report = (sub: string) => `/api/hourly-reports/${gmailId}/${sub}`;
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL = url;
+    ({ prisma } = await import("@alarm/db"));
+    const gmail = await import("../lib/gmail.js");
+    gmail.setHourlySource(gmail.createDirHourlySource(FIXTURES));
+    ({ hourlyCache } = await import("../lib/hourly.js"));
+    await api.start();
+    users = await (await import("./test-users.js")).createTestUsers(prisma, PREFIX, OFFICE);
+
+    if ((await prisma.hourlyNormalization.count()) === 0) {
+      const { DEFAULT_HOURLY_NORMALIZATIONS } = await import("@alarm/core");
+      await prisma.hourlyNormalization.createMany({ data: DEFAULT_HOURLY_NORMALIZATIONS });
+      seededNormalizations = true;
+    }
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    if (importedCodes.length) await prisma.siteMaster.deleteMany({ where: { code: { in: importedCodes } } });
+    if (seededNormalizations) await prisma.hourlyNormalization.deleteMany();
+    hourlyCache.clear();
+    (await import("../lib/gmail.js")).setHourlySource(undefined);
+    await (await import("./test-users.js")).removeTestUsers(prisma, PREFIX);
+    await api.stop();
+  });
+
+  it("imports SiteMaster (operators cannot) with an upsert summary", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const data = await readFile(SITE_MASTER);
+    const body = () => {
+      const fd = new FormData();
+      fd.set("file", new File([new Uint8Array(data)], "SiteMaster_KafrElDawar.xlsx"));
+      return fd;
+    };
+
+    as("OPERATOR");
+    expect((await call("/api/site-master/import", { method: "POST", body: body() })).status).toBe(403);
+
+    as("SUPER_ADMIN");
+    const { parseSiteMasterXlsx } = await import("@alarm/core/hourly");
+    importedCodes = (await parseSiteMasterXlsx(data)).rows.map((r) => r.code);
+    await prisma.siteMaster.deleteMany({ where: { code: { in: importedCodes } } });
+
+    const first = await call("/api/site-master/import", { method: "POST", body: body() });
+    expect(first.status).toBe(200);
+    expect(first.body.data).toMatchObject({ inserted: 136, updated: 0 });
+    expect(first.body.data.skipped).toHaveLength(2);
+
+    const again = await call("/api/site-master/import", { method: "POST", body: body() });
+    expect(again.body.data).toMatchObject({ inserted: 0, updated: 136 });
+
+    const list = await call("/api/site-master?q=3273");
+    expect(list.body.data).toEqual([expect.objectContaining({ code: "3273DE", office: "KAFR EL DAWAR" })]);
+  });
+
+  it("lists reports from the (mocked) Gmail label", async () => {
+    as("VIEWER");
+    const r = await call("/api/hourly-reports");
+    expect(r.status).toBe(200);
+    expect(r.body.data.length).toBeGreaterThan(0);
+    const report = r.body.data.find((x: { fileName: string }) => /NSN.Update_Output\.rar/.test(x.fileName));
+    expect(report).toMatchObject({ status: "pending", fileSize: 538_041 });
+    gmailId = report.gmailId;
+  });
+
+  it("viewers cannot process and cannot read an unprocessed report", async () => {
+    as("VIEWER");
+    expect((await call(report("process"), { method: "POST" })).status).toBe(403);
+    expect((await call(report(`rows`))).status).toBe(409);
+  });
+
+  it("process → 202 → status done", async () => {
+    as("OPERATOR");
+    const p = await call(report("process"), { method: "POST" });
+    expect(p.status).toBe(202);
+    expect(p.body.data).toEqual({ status: "processing" });
+
+    let status = "processing";
+    let meta: Record<string, unknown> | undefined;
+    for (let i = 0; i < 120 && status === "processing"; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const s = await call(report("status"));
+      status = s.body.data.status;
+      meta = s.body.data.meta;
+    }
+    expect(status).toBe("done");
+    expect(meta).toMatchObject({
+      rowCount: 856 + 1394 + 35,
+      sheets: { "2G_Down": 529, "3G_Down": 434, "4G_Down": 438, "5G_Down": 2, Environmental: 1394, HW: 35 },
+    });
+    expect(meta!.unmatchedCodes).toBeGreaterThan(0);
+
+    // already done → 200 without re-processing
+    const again = await call(report("process"), { method: "POST" });
+    expect(again.status).toBe(200);
+  });
+
+  it("processing saves the alarm names (Down / Environmental); collect reads the newest reports", async () => {
+    as("VIEWER");
+    const r = await call("/api/hourly-alarm-names");
+    expect(r.status).toBe(200);
+    type Name = { name: string; section: string; category: string; lastCount: number };
+    const byName = new Map<string, Name>(r.body.data.map((n: Name) => [n.name, n]));
+    expect(byName.get("MAIN POWER CUT OFF")).toMatchObject({ section: "ENV", category: "POWER" });
+    expect(r.body.data.some((n: Name) => n.section === "DOWN" && n.category === "DOWN")).toBe(true);
+    // Environmental names keep the Alarm Text they come with (the settings search matches it)
+    const texts = r.body.data
+      .filter((n: Name) => n.section === "ENV")
+      .flatMap((n: Name & { alarmTexts: string[] }) => n.alarmTexts);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.every((t: string) => t.trim().length > 0)).toBe(true);
+    expect(r.body.meta.collectReports).toBe(24);
+
+    // anyone can add a name by hand (upper-cased, spaces collapsed); adding it again is a no-op
+    const add = (body: unknown) =>
+      call("/api/hourly-alarm-names", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      const made = await add({ name: "  zz test   alarm ", section: "ENV" });
+      expect(made.status).toBe(201);
+      expect(made.body.data).toMatchObject({ name: "ZZ TEST ALARM", section: "ENV", category: "OTHER", lastCount: 0 });
+      expect((await add({ name: "ZZ TEST ALARM", section: "DOWN" })).status).toBe(200);
+      expect((await add({ name: "x", section: "NOPE" })).status).toBe(400);
+      expect((await add({ name: " ", section: "DOWN" })).status).toBe(400);
+    } finally {
+      await prisma.hourlyAlarmName.deleteMany({ where: { name: "ZZ TEST ALARM" } });
+    }
+
+    expect((await call("/api/hourly-alarm-names/collect", { method: "POST" })).status).toBe(403);
+    as("OPERATOR");
+    const c = await call("/api/hourly-alarm-names/collect", { method: "POST" });
+    expect(c.status).toBe(202);
+    let collect = c.body.meta.collect;
+    for (let i = 0; i < 240 && collect.running; i++) {
+      await new Promise((res) => setTimeout(res, 250));
+      collect = (await call("/api/hourly-alarm-names")).body.meta.collect;
+    }
+    expect(collect).toMatchObject({ running: false });
+    expect(collect.total).toBeGreaterThan(0);
+    expect(collect.done).toBe(collect.total);
+  });
+
+  it("rows filtered by office and alarm return only matching rows", async () => {
+    as("VIEWER"); // processed now → viewers can read
+    const office = await call(report(`rows?office=KAFR%20EL%20DAWAR&limit=500`));
+    expect(office.status).toBe(200);
+    expect(office.body.meta.total).toBeGreaterThan(0);
+    expect(office.body.data.every((r: { office: string }) => r.office === "KAFR EL DAWAR")).toBe(true);
+
+    // A viewer of Kafr ElDawar sees only that office's rows; the super admin sees every row.
+    const mine = await call(report(`rows?limit=500`));
+    expect(mine.body.meta.total).toBe(office.body.meta.total);
+    as("SUPER_ADMIN");
+    const all = await call(report(`rows?limit=500&page=1`));
+    expect(all.body.meta.total).toBe(2285);
+    expect(all.body.data).toHaveLength(500);
+    as("VIEWER");
+
+    const both = await call(report(`rows?office=KAFR%20EL%20DAWAR&alarm=MAIN%20POWER%20CUT%20OFF&limit=500&facets=1`));
+    expect(both.status).toBe(200);
+    expect(both.body.data.length).toBe(both.body.meta.total);
+    for (const r of both.body.data) {
+      expect(r.office).toBe("KAFR EL DAWAR");
+      expect(r.alarmName).toBe("MAIN POWER CUT OFF");
+    }
+    // the same filter by hand over the office rows
+    const expected = office.body.data.filter((r: { alarmName: string }) => r.alarmName === "MAIN POWER CUT OFF");
+    expect(both.body.meta.total).toBe(expected.length);
+    expect(both.body.meta.facets.office.length).toBeGreaterThan(0);
+
+    const bad = await call(report(`rows?category=NOPE`));
+    expect(bad.status).toBe(400);
+    const tooMany = await call(report(`rows?limit=501`));
+    expect(tooMany.status).toBe(400);
+  });
+
+  it("export returns a valid xlsx with exactly the requested columns", async () => {
+    as("VIEWER");
+    const r = await call(report(`export?office=KAFR%20EL%20DAWAR&columns=code,office,alarmName,alarmTime`));
+    expect(r.status).toBe(200);
+    expect(r.res.headers.get("content-type")).toContain("spreadsheetml");
+    expect(r.res.headers.get("content-disposition")).toMatch(/hourly-alarms-.*\.xlsx/);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await r.res.arrayBuffer());
+    const ws = wb.worksheets[0]!;
+    expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual(["Site Code", "Office", "Alarm", "Alarm Time"]);
+    expect(ws.rowCount).toBeGreaterThan(1);
+    for (let i = 2; i <= ws.rowCount; i++) expect(ws.getRow(i).getCell(2).value).toBe("KAFR EL DAWAR");
+    expect(ws.views[0]).toMatchObject({ state: "frozen", ySplit: 1 });
+
+    const bad = await call(report(`export?columns=code,nope`));
+    expect(bad.status).toBe(400);
+  });
+
+  it("hourly settings are shared per office: admins edit, everyone in the office gets them", async () => {
+    const put = (hourly: unknown) =>
+      call("/api/hourly-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hourly),
+      });
+    // viewers read (and cannot change) the settings their pages use
+    as("VIEWER");
+    const mine = await call("/api/hourly-settings");
+    expect(mine.status).toBe(200);
+    expect(mine.body.meta.editKey).toBeNull();
+    expect((await put(mine.body.data)).status).toBe(403);
+
+    // the office admin saves their office's own settings …
+    as("ADMIN");
+    const before = await call("/api/hourly-settings");
+    expect(before.body.meta.editKey).toBe(OFFICE);
+    try {
+      const saved = await put({
+        ...before.body.data,
+        hiddenCategories: ["OTHER"],
+        tableColumns: ["siteNo", "code", "alarmTime"],
+        split: { mode: "downVsRest", byOffice: false },
+      });
+      expect(saved.status).toBe(200);
+      expect(saved.body.meta).toMatchObject({ source: OFFICE, editKey: OFFICE, own: true });
+
+      // … and the viewer of the same office gets them (Excel export too)
+      as("VIEWER");
+      expect((await call("/api/hourly-settings")).body.data.tableColumns).toEqual([
+        "siteNo",
+        "code",
+        "alarmTime",
+      ]);
+      const r = await call(report("export"));
+      expect(r.status).toBe(200);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await r.res.arrayBuffer());
+      expect(wb.worksheets.map((w) => w.name)).toEqual(["DOWN", "POWER + OTHER"]);
+      const ws = wb.worksheets[0]!;
+      expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual(["Site #", "Site Code", "Alarm Time"]);
+      expect(ws.getRow(2).getCell(1).value).toBe("1");
+    } finally {
+      // back to the default: the office row is removed
+      as("ADMIN");
+      const reset = await call("/api/hourly-settings", { method: "DELETE" });
+      expect(reset.status).toBe(200);
+      expect(reset.body.meta.own).toBe(false);
+    }
+  });
+
+  it("diff of a report with itself is rejected; SiteMaster edit refreshes enrichment", async () => {
+    as("VIEWER");
+    expect((await call(`/api/hourly-reports/diff?a=${gmailId}&b=${gmailId}`)).status).toBe(400);
+
+    as("SUPER_ADMIN");
+    const put = await call("/api/site-master/3273DE", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ siteType: "rooftop" }) });
+    expect(put.status).toBe(200);
+    expect(hourlyCache.size).toBe(0); // enrichment changed → cache dropped
+    const rows = await call(report(`rows?q=3273DE&limit=500`));
+    expect(rows.status).toBe(200); // re-processed transparently
+    expect(rows.body.data.every((r: { siteType: string }) => r.siteType === "ROOFTOP")).toBe(true);
+  });
+});

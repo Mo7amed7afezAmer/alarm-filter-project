@@ -62,11 +62,13 @@ export function TextFilter({
   value,
   placeholder,
   onChange,
+  inputClassName,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   onChange: (v: string | null) => void;
+  inputClassName?: string;
 }) {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
@@ -78,7 +80,7 @@ export function TextFilter({
   return (
     <Field label={label}>
       <Input
-        className="w-full bg-white sm:w-56"
+        className={cn("w-full bg-white sm:w-56", inputClassName)}
         value={text}
         placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}
@@ -98,10 +100,18 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 /** Always visible from `sm` up; on phones collapsed behind a "Filters" toggle so the list is
  *  visible first. `active` = number of filters currently set (shown on the toggle). */
-export function FilterBar({ children, active = 0 }: { children: ReactNode; active?: number }) {
+export function FilterBar({
+  children,
+  active = 0,
+  className,
+}: {
+  children: ReactNode;
+  active?: number;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>
       <button
         type="button"
         className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 sm:hidden"
@@ -112,7 +122,7 @@ export function FilterBar({ children, active = 0 }: { children: ReactNode; activ
           <SlidersHorizontal className="h-4 w-4 text-slate-500" />
           Filters
           {active > 0 && (
-            <span className="rounded-full bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
+            <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
               {active}
             </span>
           )}

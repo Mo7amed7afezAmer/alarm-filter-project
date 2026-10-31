@@ -101,7 +101,13 @@ export class MemoryAlarmRepository implements AlarmRepository {
     this.alarms = this.alarms.filter((a) => a.alarmTime < since);
     for (const a of this.alarms) {
       if (a.clearTime && a.clearTime >= since) {
-        Object.assign(a, { status: "ACTIVE", clearTime: null, clearType: null, durationMin: null });
+        Object.assign(a, {
+          status: "ACTIVE",
+          clearTime: null,
+          clearType: null,
+          durationMin: null,
+          clearMessageId: null,
+        });
       }
     }
     const inWindow = new Set(this.raw.filter((r) => r.receivedAt >= since).map((r) => r.id));

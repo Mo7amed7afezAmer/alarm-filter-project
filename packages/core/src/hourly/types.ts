@@ -38,6 +38,8 @@ export interface HourlyRow {
   siteType: string;
   powerSource: string;
   battery: string;
+  /** Site contact (Guard Number in the SiteMaster file); "" when unknown. */
+  phone: string;
   supplementaryInfo: string;
   region: string;
   /** "2G", "3G", … collected across the *_Down sheets the row appeared in. */
@@ -51,6 +53,11 @@ export interface HourlyRow {
   clockInvalid: boolean;
   /** Code is empty or has no SiteMaster entry. */
   unmatched: boolean;
+  /** Output only (numberSites): running number of the row's site code — the last number is
+   *  how many sites are in the list. Undefined for an empty code. */
+  siteNo?: number;
+  /** Output only (numberSites): rows with the same site code in the list. */
+  siteAlarms?: number;
 }
 
 export interface HourlyMeta {
@@ -78,6 +85,7 @@ export const HOURLY_COLUMNS = [
   { key: "siteType", header: "Site Type", width: 12 },
   { key: "powerSource", header: "Power Source", width: 12 },
   { key: "battery", header: "Battery", width: 9 },
+  { key: "phone", header: "Phone", width: 14 },
   { key: "supplementaryInfo", header: "Supplementary Information", width: 34 },
   { key: "region", header: "Region", width: 8 },
   { key: "technologies", header: "Technologies", width: 14 },
@@ -85,13 +93,28 @@ export const HOURLY_COLUMNS = [
   { key: "alarmName", header: "Alarm", width: 34 },
   { key: "dn", header: "Distinguished Name", width: 44 },
   { key: "category", header: "Category", width: 10 },
+  { key: "siteNo", header: "Site #", width: 7 },
+  { key: "siteAlarms", header: "Alarms on site", width: 9 },
 ] as const satisfies readonly { key: keyof HourlyRow; header: string; width: number }[];
 export type HourlyColumnKey = (typeof HOURLY_COLUMNS)[number]["key"];
 export const HOURLY_COLUMN_KEYS = HOURLY_COLUMNS.map((c) => c.key) as HourlyColumnKey[];
 /** Shown by default (the user's Excel); the rest are opt-in in the column chooser. */
 export const HOURLY_DEFAULT_COLUMNS: HourlyColumnKey[] = HOURLY_COLUMN_KEYS.filter(
-  (k) => k !== "alarmName" && k !== "dn" && k !== "category",
+  (k) => !["alarmName", "dn", "category", "siteNo", "siteAlarms"].includes(k),
 );
+/** Short column set that fits a phone screen (default of the WhatsApp images). */
+export const HOURLY_COMPACT_COLUMNS: HourlyColumnKey[] = [
+  "alarmTime",
+  "alarmName",
+  "siteName",
+  "code",
+  "office",
+  "nodality",
+  "vip",
+  "battery",
+  "phone",
+  "siteType",
+];
 
 /** Cell text for a column (export, copy-as-table, sorting). */
 export function hourlyCellText(row: HourlyRow, key: HourlyColumnKey): string {
@@ -109,6 +132,19 @@ export function hourlyCategory(sheet: string, alarmName: string): Category {
   if (isDownSheet(sheet)) return "DOWN";
   if (sheet === "Environmental" && POWER_RE.test(alarmName.toUpperCase())) return "POWER";
   return "OTHER";
+}
+
+/** Site codes look like "3273DE" / "0H31DE": 3–6 alphanumerics + 2-letter region. */
+export const SITE_CODE_RE = /^[0-9A-Z]{3,6}[A-Z]{2}$/;
+
+/**
+ * Site code of an alarm-mail site name — its last "_" segment:
+ * "SRAN_LWG_TDD_S_BH-QMB-LOQIN_0H31DE" → "0H31DE", "U_S_BH-MHLT-KYL_3830DE" → "3830DE".
+ * null when the last segment is not a code.
+ */
+export function siteCodeOf(site: string | null | undefined): string | null {
+  const last = (site ?? "").trim().split("_").pop()?.toUpperCase() ?? "";
+  return SITE_CODE_RE.test(last) ? last : null;
 }
 
 /** "3273DE" → "DE". */
@@ -135,7 +171,14 @@ export const OFFICE_PALETTE = [
   "F5F5F4", // stone
 ] as const;
 
-const officeKey = (office: string) => office.toUpperCase().replace(/[^A-Z]/g, "");
+/**
+ * Comparable office name: last "/" segment, letters only, upper-case. Links the Gmail office
+ * label to the Site Master office column: "DN/Kafr ElDawar" and "KAFR EL DAWAR" → "KAFRELDAWAR".
+ */
+export const officeMatchKey = (office: string): string =>
+  (office.split("/").pop() ?? "").toUpperCase().replace(/[^A-Z]/g, "");
+
+const officeKey = officeMatchKey;
 
 /** Fixed slots for the known offices (CLAUDE.md §12 office list) so colors never shuffle. */
 const FIXED: Record<string, number> = {

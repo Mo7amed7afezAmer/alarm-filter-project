@@ -93,3 +93,22 @@ TEST_DATABASE_URL=postgresql://…/alarms_test corepack pnpm test:e2e  # Playwri
 
 The fixtures in `tests/fixtures/` are real network data and are **gitignored**; tests that
 need them are skipped when they are absent. First Playwright run: `npx playwright install chromium`.
+
+## WhatsApp sender (Settings → WhatsApp)
+
+The `whatsapp` service (apps/whatsapp, Baileys) posts the alarm images and the Send-panel
+updates from a linked WhatsApp number. It is internal only (:4300); the api calls it with
+`X-Internal-Token` (= `WHATSAPP_TOKEN`, else `NEXTAUTH_SECRET`).
+
+- **Use a separate number.** Linking this way is against WhatsApp's terms; the number can be
+  banned. The number must be a member of every group it posts to.
+- **Link:** super admin → Settings → WhatsApp sender → scan the QR code from the phone
+  (WhatsApp → Linked devices → Link a device). The login is kept in the `whatsapp` volume
+  (`data/whatsapp/` in local dev), so restarts do not need a new scan.
+- **Who sends:** operator and above, and only to chats saved in their own share settings
+  (Export image → Share settings, or the Send panel's "Send to"). Every send is logged in
+  `whatsapp_sends` (last 100 on the settings page).
+- **Not linked / service down:** the pages fall back to opening WhatsApp with copy / paste.
+- **Log out:** the settings page button, or remove the device on the phone; a new QR appears.
+- **Local dev:** `apps/whatsapp/.env.local` with `NEXTAUTH_SECRET` (same as the api's), then
+  `corepack pnpm --filter @alarm/whatsapp dev` (launch config `whatsapp`).

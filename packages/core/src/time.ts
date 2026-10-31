@@ -85,3 +85,9 @@ export function parseAlarmStamp(text: string, timeZone: string): Date | null {
   if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== d) return null;
   return zonedToUtc(y!, month, d!, h!, mi!, s!, timeZone);
 }
+
+/** UTC instant → "YYYY-MM-DD HH:mm:ss" wall clock in `timeZone`. */
+export function wallClockOf(date: Date, timeZone: string): string {
+  const p = Object.fromEntries(formatterFor(timeZone).formatToParts(date).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}

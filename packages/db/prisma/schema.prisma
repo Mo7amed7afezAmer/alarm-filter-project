@@ -30,7 +30,13 @@ enum Role {
   VIEWER
   /// Viewer + may trigger on-demand processing (hourly reports).
   OPERATOR
+  /// Office admin: manages the viewers/operators of their own office; sees that office only.
   ADMIN
+  /// Every office and the super admin's powers except the settings for everyone
+  /// (classification, hidden-for-everyone types, hourly settings, users, Gmail, normalization).
+  HOTLINE
+  /// Every office, every setting (Gmail, rules, Site Master, reprocess) and every user.
+  SUPER_ADMIN
 }
 
 /// Every Gmail message seen, parseable or not. Source of truth for reprocess().
@@ -42,12 +48,17 @@ model RawMessage {
   receivedAt  DateTime
   /// Plain-text email body (alarm details incl. CONSEC_NBR, cell name). Null for old rows.
   body        String?
-  /// Office = Gmail label the message was read from, e.g. "DN/Kafr ElDawar".
+  /// Office label of the message: its first label under OFFICE_LABEL_PARENTS (DN/, DS/),
+  /// e.g. "DN/Kafr ElDawar"; null when it has none (inbox only).
   office      String?
+  /// Every Gmail label of the message (display names: "INBOX", "DN/Kafr ElDawar", …).
+  labels      String[]  @default([])
   parseError  String?
   processedAt DateTime?
 
-  orphanClears OrphanClear[]
+  orphanClears  OrphanClear[]
+  alarmsRaised  Alarm[]       @relation("AlarmMail")
+  alarmsCleared Alarm[]       @relation("ClearMail")
 
   @@index([receivedAt])
   @@index([office])
@@ -69,7 +80,18 @@ model Alarm {
   consecNbr   String?     @unique
   cellName    String?
   device      String?
+  /// Office the alarm belongs to (what every page filters on): the Site Master office of
+  /// `siteCode` (mapped to its Gmail label), else `mailOffice`. Kept by resolveOffices().
   office      String?
+  /// Office label of the alarm mail (raw_messages.office).
+  mailOffice  String?
+  /// Site code = last "_" segment of `site` (join key to site_master).
+  siteCode    String?
+  /// The alarm mail, and the Clear mail that closed it (EMAIL clears only).
+  rawMessageId   Int?
+  rawMessage     RawMessage? @relation("AlarmMail", fields: [rawMessageId], references: [id], onDelete: SetNull)
+  clearMessageId Int?
+  clearMessage   RawMessage? @relation("ClearMail", fields: [clearMessageId], references: [id], onDelete: SetNull)
   createdAt   DateTime    @default(now())
 
   // Not unique any more: different cells can share alarmKey-without-cell + time; identity is consecNbr.
@@ -77,6 +99,7 @@ model Alarm {
   @@index([status, category])
   @@index([office, status])
   @@index([site])
+  @@index([siteCode])
   @@map("alarms")
 }
 
@@ -87,7 +110,9 @@ model OrphanClear {
   clearTime    DateTime
   rawMessageId Int
   consecNbr    String?
+  /// Resolved like alarms.office (Site Master first, then the mail label).
   office       String?
+  mailOffice   String?
   rawMessage   RawMessage @relation(fields: [rawMessageId], references: [id], onDelete: Cascade)
 
   @@index([alarmKey])
@@ -119,12 +144,19 @@ model User {
   email               String    @unique
   passwordHash        String
   role                Role      @default(VIEWER)
+  /// VIEWER / OPERATOR / ADMIN: the office (Gmail label) this user belongs to — they see only
+  /// it; null = no office yet (sees nothing). SUPER_ADMIN: the office currently viewed
+  /// (null = all offices).
+  office              String?
   /// Notification preferences (see packages/core/src/notify.ts). Null = defaults (DOWN only).
   notifyPrefs         Json?
   /// Notifications for alarms created after this are unread.
   notificationsSeenAt DateTime?
   /// Alarm types this user hides from THEIR pages only: { hiddenCategories, hiddenAlarmNames }.
   displayPrefs        Json?
+  /// Personal UI settings: theme, alarm table columns, site info icons, grouping
+  /// (see packages/core/src/uiPrefs.ts). Null = defaults.
+  uiPrefs             Json?
 
   @@map("users")
 }
@@ -136,9 +168,9 @@ model SystemStatus {
   lastError       String?
   lastRunMessages Int       @default(0)
   reprocessDays   Int?
-  /// Selected office (Gmail label display name). Chosen in /settings; worker reads it.
+  /// Legacy (before 2026-10-20 the worker read one office label). Unused.
   officeLabel     String?
-  /// Office label the current lastHistoryId belongs to — a change forces a fresh backfill.
+  /// What lastHistoryId belongs to: "*" = whole mailbox. Anything else forces a fresh backfill.
   syncedLabel     String?
   /// Gmail labels offered in /settings, refreshed by the worker: [{ name }].
   availableLabels Json?
@@ -147,6 +179,29 @@ model SystemStatus {
   displayFilter   Json?
 
   @@map("system_status")
+}
+
+/// The Gmail mailbox the worker and the hourly reports read (one row, id=1), connected from
+/// /settings/gmail. Overrides credentials.json / token.json when its fields are set.
+/// The refresh token is never returned by any API.
+model GmailAccount {
+  id           Int       @id @default(1)
+  /// OAuth "Desktop app" client uploaded in the UI; null = use credentials.json.
+  clientId     String?
+  clientSecret String?
+  /// Mailbox address (users.getProfile) of the connected account.
+  email        String?
+  refreshToken String?
+  scope        String?
+  connectedAt  DateTime?
+  /// E-mail of the admin who connected it.
+  connectedBy  String?
+  lastCheckAt  DateTime?
+  lastCheckOk  Boolean?
+  lastCheckMsg String?
+  updatedAt    DateTime  @updatedAt
+
+  @@map("gmail_account")
 }
 
 /// Site enrichment for hourly reports (§14). Imported from an uploaded xlsx, upserted by code.
@@ -160,6 +215,10 @@ model SiteMaster {
   siteType    String?
   powerSource String?
   battery     String?
+  /// Site contact number ("Guard Number" in the SiteMaster file).
+  phone       String?
+  /// Address or "lat, long" coordinates (Location / Address / Latitude + Longitude columns).
+  location    String?
   /// Last 2 chars of the code (DE, UP, AL, …).
   region      String?
   notes       String?
@@ -179,4 +238,56 @@ model HourlyNormalization {
 
   @@unique([field, from])
   @@map("hourly_normalizations")
+}
+
+/// Hourly report settings shared per office (2026-10-25): alarms, columns, images, sort and
+/// colours (`HourlyPrefs` in @alarm/core). `key` = office label ("DN/Tanta"), or "*" = the
+/// default for offices without their own (edited by the super admin). Office admins edit their
+/// office's row; viewers / operators only read it.
+model HourlySettings {
+  key       String   @id
+  prefs     Json
+  updatedAt DateTime @updatedAt
+  updatedBy Int?
+
+  @@map("hourly_settings")
+}
+
+/// Alarm names seen in processed hourly reports — the hide lists of Settings → Hourly reports
+/// (2026-10-25). Updated on every processing; nothing else about the rows is stored.
+model HourlyAlarmName {
+  /// alarmName as shown in the report (upper-case after normalization)
+  name      String   @id
+  /// DOWN (a *_Down sheet) or ENV (Environmental / HW: POWER + OTHER)
+  section   String
+  category  String
+  /// Rows with this name in the newest report it was seen in
+  lastCount Int      @default(0)
+  /// Time of the newest report (mail) it was seen in
+  lastSeen  DateTime @default(now())
+  /// Alarm Text values seen with this name (Environmental: "BASE STATION EXTERNAL ALARM
+  /// NOTIFICATION", …) — the settings search matches them too
+  alarmTexts String[] @default([])
+
+  @@map("hourly_alarm_names")
+}
+
+/// One WhatsApp send from the alarm pages through the sender service (2026-10-28): who sent
+/// what to which saved chat, and whether it went out. Nothing of the images is kept.
+model WhatsappSend {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  userEmail String
+  /// The saved chat: digits of a number or the group invite link.
+  chat      String
+  /// "+20…" or the group's name, as WhatsApp reported it.
+  chatName  String?
+  texts     Int      @default(0)
+  images    Int      @default(0)
+  ok        Boolean
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("whatsapp_sends")
 }

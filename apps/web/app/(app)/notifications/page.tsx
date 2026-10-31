@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** Old address — notifications live on the personal preferences page now. */
+/** Old address — notifications are a section of /settings now. */
 export default function NotificationsRedirect() {
-  redirect("/preferences#notifications");
+  redirect("/settings/notifications");
 }

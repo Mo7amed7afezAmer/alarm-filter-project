@@ -3,8 +3,11 @@
 import {
   filterHourlyRows,
   hourlyFacets,
+  hourlySortFor,
+  numberSites,
   officeColor,
   sortHourlyRows,
+  visibleHourlyRows,
   type HourlyMeta,
   type HourlyRow,
 } from "@alarm/core";
@@ -17,6 +20,7 @@ import { api, useHourlyUrl, type ReportItem } from "@/components/hourly/client";
 import { ColumnChooser, HourlyTable, useColumnPrefs } from "@/components/hourly/hourly-table";
 import { MultiSelect } from "@/components/hourly/multi-select";
 import { PageHeader } from "@/components/page-header";
+import { useHourlyPrefs } from "@/components/hourly-prefs";
 import { formatDateTime } from "@/lib/format";
 
 interface Diff {
@@ -26,7 +30,9 @@ interface Diff {
 
 function CompareView() {
   const { timeZone } = useAppConfig();
-  const { params, filters, sort, setMany, setOne, setSort } = useHourlyUrl();
+  const { hp } = useHourlyPrefs();
+  const defaultSort = useMemo(() => hourlySortFor(hp), [hp]);
+  const { params, filters, sort, setMany, setOne, setSort } = useHourlyUrl(defaultSort);
   const cols = useColumnPrefs();
   const a = params.get("a") ?? "";
   const b = params.get("b") ?? "";
@@ -53,9 +59,10 @@ function CompareView() {
 
   const all = useMemo(() => (diff ? [...diff.data.new, ...diff.data.disappeared] : []), [diff]);
   const facets = useMemo(() => hourlyFacets(all), [all]);
-  const view = (rows: HourlyRow[]) => sortHourlyRows(filterHourlyRows(rows, filters), sort);
-  const added = useMemo(() => (diff ? view(diff.data.new) : []), [diff, filters, sort]); // eslint-disable-line react-hooks/exhaustive-deps
-  const gone = useMemo(() => (diff ? view(diff.data.disappeared) : []), [diff, filters, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  const view = (rows: HourlyRow[]) =>
+    numberSites(sortHourlyRows(filterHourlyRows(visibleHourlyRows(rows, hp), filters), sort));
+  const added = useMemo(() => (diff ? view(diff.data.new) : []), [diff, filters, sort, hp]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gone = useMemo(() => (diff ? view(diff.data.disappeared) : []), [diff, filters, sort, hp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>

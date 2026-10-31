@@ -4,31 +4,57 @@ import type { ReactNode } from "react";
 import { AppConfigProvider } from "@/components/app-config";
 import { HiddenTypesNote } from "@/components/hidden-types-note";
 import { Nav } from "@/components/nav";
+import { PageGate } from "@/components/page-gate";
+import { SendButton } from "@/components/send-panel";
+import { HourlyPrefsProvider } from "@/components/hourly-prefs";
+import { UiPrefsProvider } from "@/components/ui-prefs";
+import { hiddenCount, normalizeUiPrefs, scopeOfficeOf } from "@alarm/core";
+import {
+  getDisplayFilter,
+  getHourlySettings,
+  getUserDisplayFilter,
+  hourlyEditKey,
+} from "@alarm/db";
 import { authOptions } from "@/lib/auth";
-import { getOffice } from "@/lib/office";
-import { getDisplayFilter, getUserDisplayFilter, hiddenCount } from "@/lib/visibility";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
+  // Role + office from the database: a change by an admin applies on the next page load.
+  const user = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) || -1 },
+    select: { role: true, office: true, uiPrefs: true },
+  });
+  if (!user) redirect("/login");
   const config = {
     timeZone: process.env.ALARM_TZ || "Africa/Cairo",
     alertHours: Number(process.env.ALERT_HOURS) || 4,
-    role: session.user.role,
+    role: user.role,
     email: session.user.email ?? "",
-    office: await getOffice(),
-    hiddenTypes: hiddenCount(await getDisplayFilter()),
-    myHiddenTypes: hiddenCount(await getUserDisplayFilter(Number(session.user.id))),
+    office: scopeOfficeOf(user),
+    /** The user's assigned office (super admin: the office they are viewing). */
+    homeOffice: user.office,
+    hiddenTypes: hiddenCount(await getDisplayFilter(prisma)),
+    myHiddenTypes: hiddenCount(await getUserDisplayFilter(prisma, Number(session.user.id))),
   };
+  // hourly report settings shared by the office (its own, else the default)
+  const hourly = await getHourlySettings(prisma, config.office);
+  const hourlyMeta = { source: hourly.source, editKey: hourlyEditKey(user, config.office) };
   return (
     <AppConfigProvider value={config}>
-      <Nav />
-      <main className="mx-auto max-w-screen-2xl space-y-5 px-4 py-5 sm:px-6 sm:py-6">
-        <HiddenTypesNote />
-        {children}
-      </main>
+      <UiPrefsProvider initial={normalizeUiPrefs(user.uiPrefs)}>
+        <HourlyPrefsProvider initial={hourly.prefs} initialMeta={hourlyMeta}>
+          <Nav />
+          <main className="mx-auto max-w-screen-2xl space-y-5 px-4 pb-24 pt-5 sm:px-6 sm:pt-6 md:ml-52 md:mr-0 md:max-w-none lg:px-8">
+            <HiddenTypesNote />
+            <PageGate>{children}</PageGate>
+          </main>
+          <SendButton />
+        </HourlyPrefsProvider>
+      </UiPrefsProvider>
     </AppConfigProvider>
   );
 }

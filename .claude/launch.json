@@ -2,9 +2,29 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/api",
+        "dev"
+      ],
+      "port": 4100
+    },
+    {
       "name": "web",
       "runtimeExecutable": "corepack",
-      "runtimeArgs": ["pnpm", "--filter", "@alarm/web", "exec", "next", "dev", "-H", "0.0.0.0"],
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "0.0.0.0"
+      ],
       "port": 3000,
       "autoPort": true,
       "env": {
@@ -14,12 +34,146 @@
     {
       "name": "web-hourly-mock",
       "runtimeExecutable": "corepack",
-      "runtimeArgs": ["pnpm", "--filter", "@alarm/web", "exec", "next", "dev", "-p", "3100"],
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-p",
+        "3100"
+      ],
       "port": 3100,
       "env": {
         "NEXT_DIST_DIR": ".next-mock",
         "NEXTAUTH_URL": "http://localhost:3100",
         "HOURLY_GMAIL_MOCK_DIR": "../../tests/fixtures"
+      }
+    },
+    {
+      "name": "web-via-api",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-p",
+        "3300"
+      ],
+      "port": 3300,
+      "env": {
+        "NEXT_DIST_DIR": ".next-viaapi",
+        "NEXTAUTH_URL": "http://localhost:3300",
+        "API_URL": "http://127.0.0.1:4100"
+      }
+    },
+    {
+      "name": "api-hourly-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/api",
+        "dev"
+      ],
+      "port": 4110,
+      "env": {
+        "API_PORT": "4110",
+        "HOURLY_GMAIL_MOCK_DIR": "../../tests/fixtures"
+      }
+    },
+    {
+      "name": "api-tour-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/api",
+        "dev"
+      ],
+      "port": 4110,
+      "env": {
+        "API_PORT": "4110",
+        "HOURLY_GMAIL_MOCK_DIR": "../../docs/video/.tour-fixtures"
+      }
+    },
+    {
+      "name": "web-via-api-mock",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-p",
+        "3310"
+      ],
+      "port": 3310,
+      "env": {
+        "NEXT_DIST_DIR": ".next-viaapimock",
+        "NEXTAUTH_URL": "http://localhost:3310",
+        "API_URL": "http://127.0.0.1:4110"
+      }
+    },
+    {
+      "name": "whatsapp",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/whatsapp",
+        "dev"
+      ],
+      "port": 4300
+    },
+    {
+      "name": "web-lan",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "0.0.0.0",
+        "-p",
+        "3000"
+      ],
+      "port": 3000,
+      "env": {
+        "NEXT_DIST_DIR": ".next-lan",
+        "NEXTAUTH_URL": "http://192.168.100.42:3000",
+        "API_URL": "http://127.0.0.1:4100"
+      }
+    },
+    {
+      "name": "web-tunnel",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "--filter",
+        "@alarm/web",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "0.0.0.0",
+        "-p",
+        "3400"
+      ],
+      "port": 3400,
+      "env": {
+        "NEXT_DIST_DIR": ".next-tunnel",
+        "NEXTAUTH_URL": "https://licenses-scenarios-smile-pure.trycloudflare.com",
+        "API_URL": "http://127.0.0.1:4100"
       }
     }
   ]

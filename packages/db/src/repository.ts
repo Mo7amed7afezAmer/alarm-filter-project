@@ -1,6 +1,7 @@
 // Prisma implementation of the engine's AlarmRepository (packages/core/src/engine.ts).
 // Pass a transaction client so a whole batch commits or rolls back together.
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { siteCodeOf } from "@alarm/core";
 import type {
   AlarmRecord,
   AlarmRepository,
@@ -28,6 +29,8 @@ const alarmSelect = {
   cellName: true,
   device: true,
   office: true,
+  rawMessageId: true,
+  clearMessageId: true,
 } as const;
 
 export class PrismaAlarmRepository implements AlarmRepository {
@@ -61,7 +64,11 @@ export class PrismaAlarmRepository implements AlarmRepository {
   }
 
   async createAlarm(alarm: NewAlarm): Promise<AlarmRecord> {
-    return this.db.alarm.create({ data: alarm, select: alarmSelect });
+    // office starts as the mail label; resolveOffices() moves it to the Site Master office.
+    return this.db.alarm.create({
+      data: { ...alarm, mailOffice: alarm.office, siteCode: siteCodeOf(alarm.site) },
+      select: alarmSelect,
+    });
   }
 
   async closeAlarm(id: number, patch: ClosePatch): Promise<void> {
@@ -73,7 +80,7 @@ export class PrismaAlarmRepository implements AlarmRepository {
   }
 
   async createOrphanClear(orphan: Omit<OrphanClearRecord, "id">): Promise<void> {
-    await this.db.orphanClear.create({ data: orphan });
+    await this.db.orphanClear.create({ data: { ...orphan, mailOffice: orphan.office } });
   }
 
   async deleteOrphanClear(id: number): Promise<void> {
@@ -91,7 +98,13 @@ export class PrismaAlarmRepository implements AlarmRepository {
     await this.db.alarm.deleteMany({ where: { alarmTime: { gte: since } } });
     await this.db.alarm.updateMany({
       where: { clearTime: { gte: since } },
-      data: { status: "ACTIVE", clearTime: null, clearType: null, durationMin: null },
+      data: {
+        status: "ACTIVE",
+        clearTime: null,
+        clearType: null,
+        durationMin: null,
+        clearMessageId: null,
+      },
     });
     await this.db.orphanClear.deleteMany({ where: { rawMessage: { receivedAt: { gte: since } } } });
   }
